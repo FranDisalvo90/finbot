@@ -1,0 +1,1 @@
+ALTER TABLE "expenses" ADD COLUMN "type" text DEFAULT 'expense' NOT NULL;
