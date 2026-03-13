@@ -71,9 +71,11 @@ export default function Import() {
     try {
       const form = new FormData();
       form.append("file", file);
+      const token = localStorage.getItem("auth_token");
       const res = await fetch("/api/import/upload", {
         method: "POST",
         body: form,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
         const err = await res.json();
@@ -125,9 +127,13 @@ export default function Import() {
     setConfirming(true);
     setError(null);
     try {
+      const token = localStorage.getItem("auth_token");
       const res = await fetch("/api/import/confirm", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           previewId: preview.previewId,
           exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
