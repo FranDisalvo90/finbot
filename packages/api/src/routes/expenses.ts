@@ -74,13 +74,44 @@ expensesRoutes.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
 
+  // Fetch existing expense to get currency and exchange rate for recalculation
+  const [existing] = await db
+    .select()
+    .from(expenses)
+    .where(and(eq(expenses.id, id), eq(expenses.userId, userId)));
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
   const updates: Record<string, unknown> = {};
   if (body.categoryId !== undefined) updates.categoryId = body.categoryId;
-  if (body.amount !== undefined) updates.amount = body.amount;
   if (body.description !== undefined) updates.description = body.description;
   if (body.date !== undefined) {
     updates.date = body.date;
     updates.month = body.date.substring(0, 7);
+  }
+
+  if (body.amount !== undefined) {
+    const newAmount = Number(body.amount);
+    const currency = body.currency ?? existing.currency;
+    const rate = existing.exchangeRate ? Number(existing.exchangeRate) : null;
+
+    updates.amount = String(newAmount);
+    updates.currency = currency;
+
+    if (rate) {
+      if (currency === "ARS") {
+        updates.amountArs = String(newAmount);
+        updates.amountUsd = String(+(newAmount / rate).toFixed(2));
+      } else {
+        updates.amountUsd = String(newAmount);
+        updates.amountArs = String(+(newAmount * rate).toFixed(2));
+      }
+    } else {
+      if (currency === "ARS") {
+        updates.amountArs = String(newAmount);
+      } else {
+        updates.amountUsd = String(newAmount);
+      }
+    }
   }
 
   const [updated] = await db

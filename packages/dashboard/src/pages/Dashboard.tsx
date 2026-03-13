@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   PieChart,
   Pie,
@@ -179,6 +179,37 @@ export default function Dashboard() {
   const deleteExpense = async (expenseId: string) => {
     if (!confirm("¿Eliminar este registro?")) return;
     await api(`/expenses/${expenseId}`, { method: "DELETE" });
+    refresh();
+  };
+
+  // Inline amount editing
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editRef = useRef<HTMLInputElement>(null);
+
+  const startEditing = (expense: Expense) => {
+    const amount = Number(expense.amount);
+    setEditingId(expense.id);
+    setEditValue(String(amount));
+    setTimeout(() => editRef.current?.select(), 0);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditValue("");
+  };
+
+  const saveAmount = async (expenseId: string) => {
+    const parsed = parseAmountInput(editValue);
+    if (!parsed) {
+      cancelEditing();
+      return;
+    }
+    await api(`/expenses/${expenseId}`, {
+      method: "PUT",
+      body: JSON.stringify({ amount: parsed }),
+    });
+    cancelEditing();
     refresh();
   };
 
@@ -428,8 +459,30 @@ export default function Dashboard() {
                   <td
                     className={`p-3 text-right font-mono ${isIncome ? "text-green-400" : "text-white"}`}
                   >
-                    {isIncome ? "+" : ""}
-                    {fmt(amount)}
+                    {editingId === e.id ? (
+                      <input
+                        ref={editRef}
+                        type="text"
+                        inputMode="decimal"
+                        value={formatAmountInput(editValue)}
+                        onChange={(ev) => setEditValue(parseAmountInput(ev.target.value))}
+                        onBlur={() => saveAmount(e.id)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter") saveAmount(e.id);
+                          if (ev.key === "Escape") cancelEditing();
+                        }}
+                        className="w-28 bg-dark-bg border border-blue-500 rounded px-2 py-1 text-right text-sm font-mono text-white focus:outline-none"
+                      />
+                    ) : (
+                      <span
+                        onClick={() => startEditing(e)}
+                        className="cursor-pointer hover:text-blue-400 transition-colors"
+                        title="Click para editar"
+                      >
+                        {isIncome ? "+" : ""}
+                        {fmt(amount)}
+                      </span>
+                    )}
                   </td>
                   <td className="p-3 text-center">
                     <button
