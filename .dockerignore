@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+*.log
+.git
+docker
+docker-compose.yml
+.prettierrc
+.prettierignore
+eslint.config.js

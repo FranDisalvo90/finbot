@@ -35,7 +35,8 @@ export default function Categories() {
   const toggle = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -120,10 +121,7 @@ export default function Categories() {
           >
             Crear
           </button>
-          <button
-            onClick={() => setNewParent(false)}
-            className="text-gray-500 text-sm"
-          >
+          <button onClick={() => setNewParent(false)} className="text-gray-500 text-sm">
             Cancelar
           </button>
         </div>
@@ -138,11 +136,7 @@ export default function Categories() {
             {/* Parent row */}
             <div className="flex items-center gap-3 p-3 hover:bg-dark-hover">
               <button onClick={() => toggle(parent.id)} className="text-gray-500">
-                {expanded.has(parent.id) ? (
-                  <ChevronDown size={16} />
-                ) : (
-                  <ChevronRight size={16} />
-                )}
+                {expanded.has(parent.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </button>
               {editing === parent.id ? (
                 <>
@@ -157,25 +151,17 @@ export default function Categories() {
                     className="bg-dark-bg border border-dark-border rounded px-2 py-1 flex-1 text-sm"
                     autoFocus
                   />
-                  <button
-                    onClick={() => save(parent.id)}
-                    className="text-blue-400 text-xs"
-                  >
+                  <button onClick={() => save(parent.id)} className="text-blue-400 text-xs">
                     Guardar
                   </button>
-                  <button
-                    onClick={() => setEditing(null)}
-                    className="text-gray-500 text-xs"
-                  >
+                  <button onClick={() => setEditing(null)} className="text-gray-500 text-xs">
                     Cancelar
                   </button>
                 </>
               ) : (
                 <>
                   <span className="text-lg">{parent.emoji}</span>
-                  <span className="font-medium text-white flex-1">
-                    {parent.name}
-                  </span>
+                  <span className="font-medium text-white flex-1">{parent.name}</span>
                   <span className="text-xs text-gray-500">
                     {parent.children.length} subcategorías
                   </span>
@@ -215,24 +201,16 @@ export default function Categories() {
                           className="bg-dark-bg border border-dark-border rounded px-2 py-1 flex-1 text-sm"
                           autoFocus
                         />
-                        <button
-                          onClick={() => save(child.id)}
-                          className="text-blue-400 text-xs"
-                        >
+                        <button onClick={() => save(child.id)} className="text-blue-400 text-xs">
                           Guardar
                         </button>
-                        <button
-                          onClick={() => setEditing(null)}
-                          className="text-gray-500 text-xs"
-                        >
+                        <button onClick={() => setEditing(null)} className="text-gray-500 text-xs">
                           Cancelar
                         </button>
                       </>
                     ) : (
                       <>
-                        <span className="text-sm text-gray-300 flex-1">
-                          {child.name}
-                        </span>
+                        <span className="text-sm text-gray-300 flex-1">{child.name}</span>
                         <button
                           onClick={() => {
                             setEditing(child.id);
@@ -271,10 +249,7 @@ export default function Categories() {
                     >
                       Crear
                     </button>
-                    <button
-                      onClick={() => setNewChild(null)}
-                      className="text-gray-500 text-xs"
-                    >
+                    <button onClick={() => setNewChild(null)} className="text-gray-500 text-xs">
                       Cancelar
                     </button>
                   </div>

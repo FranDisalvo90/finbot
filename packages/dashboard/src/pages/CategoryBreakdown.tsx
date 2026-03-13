@@ -28,8 +28,18 @@ function shiftMonth(month: string, delta: number): string {
 function formatMonth(month: string): string {
   const [y, m] = month.split("-");
   const names = [
-    "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-    "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+    "Ene",
+    "Feb",
+    "Mar",
+    "Abr",
+    "May",
+    "Jun",
+    "Jul",
+    "Ago",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dic",
   ];
   return `${names[Number(m) - 1]} ${y}`;
 }
@@ -62,13 +72,14 @@ export default function CategoryBreakdown() {
   const toggle = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -84,9 +95,7 @@ export default function CategoryBreakdown() {
           >
             <ChevronLeft size={20} />
           </button>
-          <h2 className="text-xl font-semibold text-white">
-            {formatMonth(month)}
-          </h2>
+          <h2 className="text-xl font-semibold text-white">{formatMonth(month)}</h2>
           <button
             onClick={() => setMonth(shiftMonth(month, 1))}
             className="p-2 rounded-lg bg-dark-card hover:bg-dark-hover"
@@ -117,9 +126,7 @@ export default function CategoryBreakdown() {
       {/* Title + Grand Total */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-white">Desglose por categoría</h3>
-        {!loading && (
-          <span className="text-lg font-semibold text-white">{fmt(grandTotal)}</span>
-        )}
+        {!loading && <span className="text-lg font-semibold text-white">{fmt(grandTotal)}</span>}
       </div>
 
       {loading ? (
@@ -127,9 +134,7 @@ export default function CategoryBreakdown() {
           <Loader2 className="animate-spin text-blue-500" size={32} />
         </div>
       ) : data.length === 0 ? (
-        <div className="text-center text-gray-500 py-12">
-          No hay gastos para este mes
-        </div>
+        <div className="text-center text-gray-500 py-12">No hay gastos para este mes</div>
       ) : (
         <div className="space-y-2">
           {data.map((parent) => {
@@ -149,17 +154,13 @@ export default function CategoryBreakdown() {
                     {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </span>
                   <span className="text-lg">{parent.emoji}</span>
-                  <span className="font-medium text-white flex-1 text-left">
-                    {parent.name}
-                  </span>
+                  <span className="font-medium text-white flex-1 text-left">{parent.name}</span>
                   {grandTotal > 0 && (
                     <span className="text-xs text-gray-500 mr-2">
                       {((parentTotal / grandTotal) * 100).toFixed(1)}%
                     </span>
                   )}
-                  <span className="font-mono text-white font-medium">
-                    {fmt(parentTotal)}
-                  </span>
+                  <span className="font-mono text-white font-medium">{fmt(parentTotal)}</span>
                 </button>
 
                 {/* Children */}
@@ -173,9 +174,7 @@ export default function CategoryBreakdown() {
                           key={child.id}
                           className="flex items-center gap-3 pl-12 pr-3 py-2.5 hover:bg-dark-hover border-b border-dark-border last:border-0"
                         >
-                          <span className="text-sm text-gray-300 flex-1">
-                            {child.name}
-                          </span>
+                          <span className="text-sm text-gray-300 flex-1">{child.name}</span>
                           <div className="w-24 h-1.5 bg-dark-border rounded-full overflow-hidden mr-2">
                             <div
                               className="h-full bg-blue-500 rounded-full"

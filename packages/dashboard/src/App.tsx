@@ -1,15 +1,12 @@
-import { Routes, Route, NavLink } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Upload,
-  Tags,
-  FolderTree,
-} from "lucide-react";
+import { Routes, Route, NavLink, Navigate } from "react-router-dom";
+import { LayoutDashboard, Upload, Tags, FolderTree, LogOut } from "lucide-react";
+import { useAuth } from "./lib/auth";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
 import Categorize from "./pages/Categorize";
 import Categories from "./pages/Categories";
 import CategoryBreakdown from "./pages/CategoryBreakdown";
+import Login from "./pages/Login";
 
 const NAV = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -19,6 +16,25 @@ const NAV = [
 ];
 
 export default function App() {
+  const { isAuthenticated, isLoading, user, logout } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-dark-bg flex items-center justify-center">
+        <p className="text-gray-400">Cargando...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
@@ -41,6 +57,28 @@ export default function App() {
             {label}
           </NavLink>
         ))}
+
+        {/* User + Logout */}
+        <div className="mt-auto pt-4 border-t border-dark-border">
+          <div className="flex items-center gap-3 px-3 py-2">
+            {user?.picture && (
+              <img
+                src={user.picture}
+                alt=""
+                className="w-7 h-7 rounded-full"
+                referrerPolicy="no-referrer"
+              />
+            )}
+            <span className="text-xs text-gray-400 truncate flex-1">{user?.name}</span>
+            <button
+              onClick={logout}
+              className="text-gray-500 hover:text-white transition-colors"
+              title="Cerrar sesión"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </div>
       </nav>
 
       {/* Main content */}
@@ -51,6 +89,7 @@ export default function App() {
           <Route path="/categorize" element={<Categorize />} />
           <Route path="/categories" element={<Categories />} />
           <Route path="/breakdown" element={<CategoryBreakdown />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

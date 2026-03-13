@@ -1,20 +1,11 @@
-import { eq } from "drizzle-orm";
 import { db } from "./client.js";
 import { categories } from "./schema.js";
 
-const CATEGORY_TREE = [
+export const CATEGORY_TREE = [
   {
     name: "VIVIENDA",
     emoji: "🏠",
-    children: [
-      "Alquiler",
-      "Agua",
-      "Luz",
-      "Gas",
-      "Expensas",
-      "Internet",
-      "Equipamiento",
-    ],
+    children: ["Alquiler", "Agua", "Luz", "Gas", "Expensas", "Internet", "Equipamiento"],
   },
   {
     name: "SERVICIOS Y PRODUCTOS VARIOS",
@@ -56,13 +47,7 @@ const CATEGORY_TREE = [
   {
     name: "AUTO",
     emoji: "🚗",
-    children: [
-      "Seguro",
-      "Estacionamiento",
-      "Patente",
-      "Nafta",
-      "Peaje/lavado/service/arreglos",
-    ],
+    children: ["Seguro", "Estacionamiento", "Patente", "Nafta", "Peaje/lavado/service/arreglos"],
   },
   {
     name: "AMORT, DEPR Y PREVISIONES",
@@ -82,48 +67,53 @@ const CATEGORY_TREE = [
   },
 ];
 
-async function seed() {
-  console.log("Seeding categories...");
-
+export async function seedCategoriesForUser(userId: string) {
   for (let i = 0; i < CATEGORY_TREE.length; i++) {
     const parent = CATEGORY_TREE[i];
-
-    // Check if parent already exists
-    const existing = await db
-      .select()
-      .from(categories)
-      .where(eq(categories.name, parent.name));
-
-    if (existing.length > 0) {
-      console.log(`${parent.name} already exists, skipping.`);
-      continue;
-    }
 
     const [inserted] = await db
       .insert(categories)
       .values({
+        userId,
         name: parent.name,
         emoji: parent.emoji,
         sortOrder: i,
       })
       .returning();
 
-    for (let j = 0; j < parent.children.length; j++) {
-      await db.insert(categories).values({
-        name: parent.children[j],
+    await db.insert(categories).values(
+      parent.children.map((name, j) => ({
+        userId,
+        name,
         parentId: inserted.id,
         sortOrder: j,
-      });
-    }
-
-    console.log(`Seeded ${parent.name} with ${parent.children.length} children.`);
+      })),
+    );
   }
+}
 
+async function seed() {
+  console.log("Seeding categories...");
+  // CLI seed requires a userId argument
+  const userId = process.argv[2];
+  if (!userId) {
+    console.error("Usage: seed <userId>");
+    process.exit(1);
+  }
+  await seedCategoriesForUser(userId);
   console.log("Seed complete.");
   process.exit(0);
 }
 
-seed().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Only run when executed directly as a script (not when imported)
+const isMainModule =
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  (process.argv[1].endsWith("/seed.ts") || process.argv[1].endsWith("/seed.js"));
+
+if (isMainModule) {
+  seed().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

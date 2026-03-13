@@ -89,11 +89,7 @@ export default function Categorize() {
           disabled={aiLoading || expenses.length === 0}
           className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
         >
-          {aiLoading ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Sparkles size={16} />
-          )}
+          {aiLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
           Categorizar con IA
         </button>
       </div>

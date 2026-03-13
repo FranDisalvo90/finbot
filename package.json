@@ -1,14 +1,22 @@
 {
   "name": "finbot",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "dev:api": "pnpm --filter api dev",
     "dev:dashboard": "pnpm --filter dashboard dev",
     "db:generate": "pnpm --filter api db:generate",
     "db:migrate": "pnpm --filter api db:migrate",
+    "db:migrate:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5433/finbot_test pnpm --filter api db:migrate",
     "db:seed": "pnpm --filter api db:seed",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r test",
+    "test:api": "pnpm --filter api test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -16,5 +24,14 @@
       "@esbuild/*",
       "esbuild-*"
     ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "prettier": "^3.8.1",
+    "typescript-eslint": "^8.57.0"
   }
 }

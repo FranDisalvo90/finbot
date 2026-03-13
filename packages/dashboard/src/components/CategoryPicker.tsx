@@ -40,17 +40,14 @@ export default function CategoryPicker({ categories, onSelect, value }: Props) {
     return categories
       .map((parent) => ({
         ...parent,
-        children: parent.children.filter((c) =>
-          c.name.toLowerCase().includes(q) ||
-          parent.name.toLowerCase().includes(q)
+        children: parent.children.filter(
+          (c) => c.name.toLowerCase().includes(q) || parent.name.toLowerCase().includes(q),
         ),
       }))
       .filter((p) => p.children.length > 0);
   }, [categories, search]);
 
-  const label = value
-    ? `${value.emoji ?? ""} ${value.name}`.trim()
-    : "Seleccionar categoría";
+  const label = value ? `${value.emoji ?? ""} ${value.name}`.trim() : "Seleccionar categoría";
 
   return (
     <div ref={ref} className="relative w-56">
@@ -77,9 +74,7 @@ export default function CategoryPicker({ categories, onSelect, value }: Props) {
             />
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {filtered.length === 0 && (
-              <p className="text-xs text-gray-500 p-3">Sin resultados</p>
-            )}
+            {filtered.length === 0 && <p className="text-xs text-gray-500 p-3">Sin resultados</p>}
             {filtered.map((parent) => (
               <div key={parent.id}>
                 <p className="text-xs text-gray-500 font-medium px-3 pt-2 pb-1">
@@ -94,9 +89,7 @@ export default function CategoryPicker({ categories, onSelect, value }: Props) {
                       setSearch("");
                     }}
                     className={`w-full text-left px-3 py-1.5 pl-6 text-sm hover:bg-dark-hover hover:text-white ${
-                      value?.id === child.id
-                        ? "text-blue-400 font-medium"
-                        : "text-gray-300"
+                      value?.id === child.id ? "text-blue-400 font-medium" : "text-gray-300"
                     }`}
                   >
                     {child.name}

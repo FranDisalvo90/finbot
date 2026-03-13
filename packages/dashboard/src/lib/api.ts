@@ -1,13 +1,29 @@
 const BASE = "/api";
 
-export async function api<T>(
-  path: string,
-  options?: RequestInit
-): Promise<T> {
+export async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem("auth_token");
+
+  const headers: Record<string, string> = {};
+
+  if (!(options?.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { ...headers, ...(options?.headers as Record<string, string>) },
   });
+
+  if (res.status === 401) {
+    localStorage.removeItem("auth_token");
+    window.location.href = "/login";
+    throw new Error("Session expired");
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? "Request failed");

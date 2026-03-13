@@ -1,19 +1,12 @@
 import { Hono } from "hono";
 import { db } from "../db/client.js";
-import {
-  expenses,
-  imports,
-  categorizationRules,
-} from "../db/schema.js";
-import { eq, isNull } from "drizzle-orm";
+import { expenses, imports, categorizationRules } from "../db/schema.js";
+import { eq, isNull, and } from "drizzle-orm";
 import { parseVisaGaliciaPDF } from "../services/parsers/visa-galicia.js";
 import { parseSplitweiseCSV } from "../services/parsers/splitwise.js";
-import {
-  applyRules,
-  categorizeBatch,
-  applyCategorization,
-} from "../services/categorizer.js";
+import { applyRules, categorizeBatch, applyCategorization } from "../services/categorizer.js";
 import type { ParsedExpense } from "../services/parsers/visa-galicia.js";
+import { getUserId } from "../middleware/get-user.js";
 
 export const importRoutes = new Hono();
 
@@ -25,7 +18,7 @@ async function fetchBlueRate(): Promise<number | null> {
   try {
     const res = await fetch("https://dolarapi.com/v1/dolares/blue");
     if (!res.ok) return null;
-    const data = await res.json() as { venta: number };
+    const data = (await res.json()) as { venta: number };
     return data.venta;
   } catch {
     return null;
@@ -52,10 +45,7 @@ importRoutes.post("/upload", async (c) => {
       parsed = parseSplitweiseCSV(buffer.toString("utf-8"));
       source = "splitwise";
     } else {
-      return c.json(
-        { error: "Formato no soportado. Usá un archivo PDF o CSV." },
-        400
-      );
+      return c.json({ error: "Formato no soportado. Usá un archivo PDF o CSV." }, 400);
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Parse error";
@@ -63,10 +53,7 @@ importRoutes.post("/upload", async (c) => {
   }
 
   if (parsed.length === 0) {
-    return c.json(
-      { error: "No se encontraron gastos en el archivo." },
-      400
-    );
+    return c.json({ error: "No se encontraron gastos en el archivo." }, 400);
   }
 
   // Extract available months
@@ -91,6 +78,7 @@ importRoutes.post("/upload", async (c) => {
 
 // POST /confirm — save preview to DB + categorize
 importRoutes.post("/confirm", async (c) => {
+  const userId = getUserId(c);
   const { previewId, month, overrideMonth, exchangeRate } = await c.req.json();
   const preview = previews.get(previewId);
   if (!preview) return c.json({ error: "Preview not found or expired" }, 404);
@@ -110,6 +98,7 @@ importRoutes.post("/confirm", async (c) => {
   const [importRecord] = await db
     .insert(imports)
     .values({
+      userId,
       fileName: preview.fileName,
       source: preview.source,
       month: resolvedMonth,
@@ -124,12 +113,17 @@ importRoutes.post("/confirm", async (c) => {
     .values(
       filtered.map((e) => {
         const amountArs = rate
-          ? e.currency === "ARS" ? String(e.amount) : String(+(e.amount * rate).toFixed(2))
+          ? e.currency === "ARS"
+            ? String(e.amount)
+            : String(+(e.amount * rate).toFixed(2))
           : "0";
         const amountUsd = rate
-          ? e.currency === "USD" ? String(e.amount) : String(+(e.amount / rate).toFixed(2))
+          ? e.currency === "USD"
+            ? String(e.amount)
+            : String(+(e.amount / rate).toFixed(2))
           : "0";
         return {
+          userId,
           amount: String(e.amount),
           currency: e.currency,
           description: e.description,
@@ -144,13 +138,14 @@ importRoutes.post("/confirm", async (c) => {
           exchangeRate: rate ? String(rate) : null,
           rawData: { raw: e.rawLine },
         };
-      })
+      }),
     )
     .returning();
 
   // Apply rules
   const ruleMatches = await applyRules(
-    inserted.map((e) => ({ id: e.id, description: e.description }))
+    inserted.map((e) => ({ id: e.id, description: e.description })),
+    userId,
   );
   const ruleCount = await applyCategorization(ruleMatches);
 
@@ -163,7 +158,7 @@ importRoutes.post("/confirm", async (c) => {
       amount: Number(e.amount),
     }));
 
-  const aiResults = await categorizeBatch(uncategorized);
+  const aiResults = await categorizeBatch(uncategorized, userId);
   const aiMap = new Map(aiResults.map((r) => [r.expenseId, r.categoryId]));
   const aiCount = await applyCategorization(aiMap);
 
@@ -180,10 +175,11 @@ importRoutes.post("/confirm", async (c) => {
 
 // POST /categorize/auto — re-run AI on uncategorized
 importRoutes.post("/categorize/auto", async (c) => {
+  const userId = getUserId(c);
   const uncategorized = await db
     .select()
     .from(expenses)
-    .where(isNull(expenses.categoryId));
+    .where(and(isNull(expenses.categoryId), eq(expenses.userId, userId)));
 
   if (uncategorized.length === 0)
     return c.json({ message: "No uncategorized expenses", categorized: 0 });
@@ -193,7 +189,8 @@ importRoutes.post("/categorize/auto", async (c) => {
       id: e.id,
       description: e.description,
       amount: Number(e.amount),
-    }))
+    })),
+    userId,
   );
 
   const aiMap = new Map(aiResults.map((r) => [r.expenseId, r.categoryId]));
@@ -204,23 +201,22 @@ importRoutes.post("/categorize/auto", async (c) => {
 
 // PUT /categorize/:expenseId — manual categorization + optional rule
 importRoutes.put("/categorize/:expenseId", async (c) => {
+  const userId = getUserId(c);
   const expenseId = c.req.param("expenseId");
   const { categoryId, createRule } = await c.req.json();
 
   const [expense] = await db
     .select()
     .from(expenses)
-    .where(eq(expenses.id, expenseId));
+    .where(and(eq(expenses.id, expenseId), eq(expenses.userId, userId)));
 
   if (!expense) return c.json({ error: "Expense not found" }, 404);
 
-  await db
-    .update(expenses)
-    .set({ categoryId })
-    .where(eq(expenses.id, expenseId));
+  await db.update(expenses).set({ categoryId }).where(eq(expenses.id, expenseId));
 
   if (createRule) {
     await db.insert(categorizationRules).values({
+      userId,
       pattern: expense.description.toLowerCase(),
       categoryId,
       source: "manual",

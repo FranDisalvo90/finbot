@@ -14,6 +14,7 @@ import { relations } from "drizzle-orm";
 
 export const categories = pgTable("categories", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id),
   name: text("name").notNull(),
   emoji: text("emoji"),
   parentId: uuid("parent_id").references((): AnyPgColumn => categories.id),
@@ -34,6 +35,7 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
 
 export const expenses = pgTable("expenses", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   currency: text("currency").default("ARS").notNull(),
   description: text("description").notNull(),
@@ -61,6 +63,7 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
 
 export const categorizationRules = pgTable("categorization_rules", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id),
   pattern: text("pattern").notNull(),
   categoryId: uuid("category_id")
     .references(() => categories.id)
@@ -69,18 +72,25 @@ export const categorizationRules = pgTable("categorization_rules", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const categorizationRulesRelations = relations(
-  categorizationRules,
-  ({ one }) => ({
-    category: one(categories, {
-      fields: [categorizationRules.categoryId],
-      references: [categories.id],
-    }),
-  })
-);
+export const categorizationRulesRelations = relations(categorizationRules, ({ one }) => ({
+  category: one(categories, {
+    fields: [categorizationRules.categoryId],
+    references: [categories.id],
+  }),
+}));
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  googleId: text("google_id").notNull().unique(),
+  email: text("email").notNull().unique(),
+  name: text("name").notNull(),
+  picture: text("picture"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 export const imports = pgTable("imports", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id),
   fileName: text("file_name"),
   source: text("source").notNull(), // 'splitwise' | 'visa_galicia'
   month: text("month"),

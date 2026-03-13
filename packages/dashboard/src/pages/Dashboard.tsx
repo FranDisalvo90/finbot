@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { ChevronLeft, ChevronRight, Trash2, Plus, X } from "lucide-react";
 import { Link } from "react-router-dom";
-import { api, formatARS, formatUSD, formatMoney, getCurrentMonth } from "../lib/api";
+import { api, formatARS, formatUSD, getCurrentMonth } from "../lib/api";
 import CategoryPicker from "../components/CategoryPicker";
 
 interface Category {
@@ -24,6 +24,24 @@ interface Category {
   emoji: string | null;
   parentId: string | null;
   children: { id: string; name: string }[];
+}
+
+function formatAmountInput(raw: string): string {
+  if (!raw) return "";
+  const [intPart, decPart] = raw.split(".");
+  const formatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return decPart !== undefined ? `${formatted},${decPart}` : formatted;
+}
+
+function parseAmountInput(display: string): string {
+  // Strip thousand separators (dots), convert decimal comma to dot
+  const cleaned = display.replace(/\./g, "").replace(",", ".");
+  // Only allow digits, one decimal point
+  if (cleaned === "" || cleaned === ".") return "";
+  const num = Number(cleaned);
+  if (isNaN(num)) return "";
+  // Keep the raw cleaned string to preserve user's decimal input (e.g. "1500." while typing)
+  return cleaned;
 }
 
 const COLORS = [
@@ -204,21 +222,13 @@ export default function Dashboard() {
     api<TrendItem[]>("/reports/trend?months=6").then(setTrend);
   }, []);
 
-  const prevMonth = report
-    ? trend.find((t) => t.month === shiftMonth(month, -1))
-    : null;
+  const prevMonth = report ? trend.find((t) => t.month === shiftMonth(month, -1)) : null;
   const currentTotal = report ? pickTotal(report) : 0;
   const prevTotal = prevMonth ? pickTotal(prevMonth) : 0;
   const changePercent =
-    prevMonth && report && prevTotal > 0
-      ? ((currentTotal - prevTotal) / prevTotal) * 100
-      : null;
+    prevMonth && report && prevTotal > 0 ? ((currentTotal - prevTotal) / prevTotal) * 100 : null;
 
-  const savings = report
-    ? currency === "ARS"
-      ? report.savingsArs
-      : report.savingsUsd
-    : 0;
+  const savings = report ? (currency === "ARS" ? report.savingsArs : report.savingsUsd) : 0;
 
   return (
     <div className="space-y-6">
@@ -231,9 +241,7 @@ export default function Dashboard() {
           >
             <ChevronLeft size={20} />
           </button>
-          <h2 className="text-xl font-semibold text-white">
-            {formatMonth(month)}
-          </h2>
+          <h2 className="text-xl font-semibold text-white">{formatMonth(month)}</h2>
           <button
             onClick={() => setMonth(shiftMonth(month, 1))}
             className="p-2 rounded-lg bg-dark-card hover:bg-dark-hover"
@@ -242,13 +250,6 @@ export default function Dashboard() {
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowIncomeForm(!showIncomeForm)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
-          >
-            <Plus size={16} />
-            Ingreso
-          </button>
           <div className="flex items-center bg-dark-card rounded-lg border border-dark-border p-0.5">
             <button
               onClick={() => setCurrency("ARS")}
@@ -270,96 +271,12 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Income Form */}
-      {showIncomeForm && (
-        <div className="bg-dark-card rounded-xl p-4 border border-green-800/50 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-green-400">Nuevo ingreso</h3>
-            <button onClick={() => setShowIncomeForm(false)} className="text-gray-500 hover:text-white">
-              <X size={16} />
-            </button>
-          </div>
-          <div className="grid grid-cols-5 gap-3">
-            <input
-              type="text"
-              placeholder="Descripción"
-              value={incomeDesc}
-              onChange={(e) => setIncomeDesc(e.target.value)}
-              className="col-span-2 bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-600"
-            />
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                placeholder="Monto"
-                value={incomeAmount}
-                onChange={(e) => setIncomeAmount(e.target.value)}
-                className="w-full bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-600"
-              />
-              <div className="flex bg-dark-bg rounded-lg border border-dark-border p-0.5 shrink-0">
-                <button
-                  onClick={() => setIncomeCurrency("ARS")}
-                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                    incomeCurrency === "ARS" ? "bg-green-600 text-white" : "text-gray-400"
-                  }`}
-                >
-                  ARS
-                </button>
-                <button
-                  onClick={() => setIncomeCurrency("USD")}
-                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                    incomeCurrency === "USD" ? "bg-green-600 text-white" : "text-gray-400"
-                  }`}
-                >
-                  USD
-                </button>
-              </div>
-            </div>
-            <input
-              type="date"
-              value={incomeDate}
-              onChange={(e) => setIncomeDate(e.target.value)}
-              className="bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-600"
-            />
-            <div className="flex items-center gap-2">
-              <select
-                value={incomeCategoryId}
-                onChange={(e) => setIncomeCategoryId(e.target.value)}
-                className="w-full bg-dark-bg border border-dark-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-600"
-              >
-                <option value="">Subcategoría</option>
-                {incomeSubcategories.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {exchangeRate && (
-            <p className="text-xs text-gray-500">
-              Tipo de cambio blue: ${exchangeRate.toFixed(2)}
-            </p>
-          )}
-          <button
-            onClick={saveIncome}
-            disabled={savingIncome || !incomeDesc || !incomeAmount || !incomeCategoryId}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            {savingIncome ? "Guardando..." : "Guardar ingreso"}
-          </button>
-        </div>
-      )}
+      {/* Income Side Panel */}
 
       {/* Summary Cards */}
       {report && (
         <div className="grid grid-cols-4 gap-4">
           <Card label="Total gastos" value={fmt(pickTotal(report))} />
-          <Card label="Gastos" value={String(report.count)} />
-          <Card
-            label="Ahorro"
-            value={fmt(savings)}
-            color={savings >= 0 ? "text-green-400" : "text-red-400"}
-          />
           <Card
             label="vs mes anterior"
             value={
@@ -375,6 +292,12 @@ export default function Dashboard() {
                 : undefined
             }
           />
+          <Card label="Gastos" value={String(report.count)} />
+          <Card
+            label="Ahorro"
+            value={fmt(savings)}
+            color={savings >= 0 ? "text-green-400" : "text-red-400"}
+          />
         </div>
       )}
 
@@ -383,9 +306,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 gap-4">
           {/* Pie Chart */}
           <div className="bg-dark-card rounded-xl p-4 border border-dark-border">
-            <h3 className="text-sm font-medium text-gray-400 mb-4">
-              Distribución por categoría
-            </h3>
+            <h3 className="text-sm font-medium text-gray-400 mb-4">Distribución por categoría</h3>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -421,10 +342,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
             <div className="flex flex-wrap gap-2 mt-2">
               {report.byCategory.map((cat, i) => (
-                <span
-                  key={cat.id}
-                  className="flex items-center gap-1 text-xs text-gray-400"
-                >
+                <span key={cat.id} className="flex items-center gap-1 text-xs text-gray-400">
                   <span
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: COLORS[i % COLORS.length] }}
@@ -444,11 +362,7 @@ export default function Dashboard() {
               Gasto por categoría →
             </Link>
             <ResponsiveContainer width="100%" height={340}>
-              <BarChart
-                data={report.byCategory}
-                layout="vertical"
-                margin={{ left: 100 }}
-              >
+              <BarChart data={report.byCategory} layout="vertical" margin={{ left: 100 }}>
                 <XAxis type="number" tickFormatter={(v) => fmt(v)} />
                 <YAxis
                   type="category"
@@ -480,9 +394,7 @@ export default function Dashboard() {
 
       {/* Expense Table */}
       <div className="bg-dark-card rounded-xl border border-dark-border overflow-hidden">
-        <h3 className="text-sm font-medium text-gray-400 p-4 pb-2">
-          Movimientos del mes
-        </h3>
+        <h3 className="text-sm font-medium text-gray-400 p-4 pb-2">Movimientos del mes</h3>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-dark-border text-gray-500">
@@ -501,11 +413,7 @@ export default function Dashboard() {
                 <tr
                   key={e.id}
                   className={`border-b border-dark-border hover:bg-dark-hover ${
-                    isIncome
-                      ? "bg-green-900/10"
-                      : !e.category
-                        ? "bg-yellow-900/10"
-                        : ""
+                    isIncome ? "bg-green-900/10" : !e.category ? "bg-yellow-900/10" : ""
                   }`}
                 >
                   <td className="p-3 text-gray-400">{e.date}</td>
@@ -517,8 +425,11 @@ export default function Dashboard() {
                       onSelect={(catId) => recategorize(e.id, catId)}
                     />
                   </td>
-                  <td className={`p-3 text-right font-mono ${isIncome ? "text-green-400" : "text-white"}`}>
-                    {isIncome ? "+" : ""}{fmt(amount)}
+                  <td
+                    className={`p-3 text-right font-mono ${isIncome ? "text-green-400" : "text-white"}`}
+                  >
+                    {isIncome ? "+" : ""}
+                    {fmt(amount)}
                   </td>
                   <td className="p-3 text-center">
                     <button
@@ -545,9 +456,7 @@ export default function Dashboard() {
       {/* Trend */}
       {trend.length > 1 && (
         <div className="bg-dark-card rounded-xl p-4 border border-dark-border">
-          <h3 className="text-sm font-medium text-gray-400 mb-4">
-            Evolución mensual
-          </h3>
+          <h3 className="text-sm font-medium text-gray-400 mb-4">Evolución mensual</h3>
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={trend}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2A2D37" />
@@ -577,25 +486,137 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* Floating Action Button */}
+      <button
+        onClick={() => setShowIncomeForm(true)}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-900/30 flex items-center justify-center transition-all hover:scale-105 z-50"
+      >
+        <Plus size={24} />
+      </button>
+
+      {/* Side Panel Overlay */}
+      <div
+        className={`fixed inset-0 z-50 transition-opacity duration-300 ${showIncomeForm ? "pointer-events-auto" : "pointer-events-none"}`}
+      >
+        {/* Backdrop */}
+        <div
+          className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${showIncomeForm ? "opacity-100" : "opacity-0"}`}
+          onClick={() => setShowIncomeForm(false)}
+        />
+        {/* Panel */}
+        <div
+          className={`absolute top-0 right-0 h-full w-full max-w-md bg-dark-bg border-l border-dark-border shadow-2xl transition-transform duration-300 ease-out ${showIncomeForm ? "translate-x-0" : "translate-x-full"}`}
+        >
+          <div className="flex flex-col h-full p-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-white">Nuevo ingreso</h2>
+              <button
+                onClick={() => setShowIncomeForm(false)}
+                className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-dark-hover transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="flex-1 space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Descripción</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Sueldo marzo"
+                  value={incomeDesc}
+                  onChange={(e) => setIncomeDesc(e.target.value)}
+                  className="w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Monto</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    value={formatAmountInput(incomeAmount)}
+                    onChange={(e) => setIncomeAmount(parseAmountInput(e.target.value))}
+                    className="flex-1 bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-600"
+                  />
+                  <div className="flex bg-dark-card rounded-lg border border-dark-border p-0.5 shrink-0">
+                    <button
+                      onClick={() => setIncomeCurrency("ARS")}
+                      className={`px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                        incomeCurrency === "ARS" ? "bg-green-600 text-white" : "text-gray-400"
+                      }`}
+                    >
+                      ARS
+                    </button>
+                    <button
+                      onClick={() => setIncomeCurrency("USD")}
+                      className={`px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                        incomeCurrency === "USD" ? "bg-green-600 text-white" : "text-gray-400"
+                      }`}
+                    >
+                      USD
+                    </button>
+                  </div>
+                </div>
+                {exchangeRate && (
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Tipo de cambio blue: ${exchangeRate.toFixed(2)}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Fecha</label>
+                <input
+                  type="date"
+                  value={incomeDate}
+                  onChange={(e) => setIncomeDate(e.target.value)}
+                  className="w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-green-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1.5">Subcategoría</label>
+                <select
+                  value={incomeCategoryId}
+                  onChange={(e) => setIncomeCategoryId(e.target.value)}
+                  className="w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-green-600"
+                >
+                  <option value="">Seleccionar...</option>
+                  {incomeSubcategories.map((sc) => (
+                    <option key={sc.id} value={sc.id}>
+                      {sc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <button
+              onClick={saveIncome}
+              disabled={savingIncome || !incomeDesc || !incomeAmount || !incomeCategoryId}
+              className="w-full mt-6 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+            >
+              {savingIncome ? "Guardando..." : "Guardar ingreso"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function Card({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
+function Card({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="bg-dark-card rounded-xl p-4 border border-dark-border">
       <p className="text-xs text-gray-500 mb-1">{label}</p>
-      <p className={`text-lg font-semibold ${color ?? "text-white"}`}>
-        {value}
-      </p>
+      <p className={`text-lg font-semibold ${color ?? "text-white"}`}>{value}</p>
     </div>
   );
 }

@@ -12,9 +12,13 @@ interface CategorizeResult {
 
 // Step 1: Match against existing rules
 export async function applyRules(
-  expenseList: { id: string; description: string }[]
+  expenseList: { id: string; description: string }[],
+  userId: string,
 ): Promise<Map<string, string>> {
-  const rules = await db.select().from(categorizationRules);
+  const rules = await db
+    .select()
+    .from(categorizationRules)
+    .where(eq(categorizationRules.userId, userId));
   const matched = new Map<string, string>();
 
   for (const expense of expenseList) {
@@ -34,7 +38,8 @@ const BATCH_SIZE = 40;
 
 // Step 2: AI categorization for unmatched expenses
 export async function categorizeBatch(
-  uncategorized: { id: string; description: string; amount: number }[]
+  uncategorized: { id: string; description: string; amount: number }[],
+  userId: string,
 ): Promise<CategorizeResult[]> {
   if (uncategorized.length === 0) {
     console.log("[categorizer] skipping: no expenses");
@@ -48,13 +53,14 @@ export async function categorizeBatch(
     return [];
   }
 
-  const allCategories = await db.select().from(categories);
+  const allCategories = await db
+    .select()
+    .from(categories)
+    .where(eq(categories.userId, userId));
   const parents = allCategories.filter((c) => !c.parentId && c.name !== "INGRESOS");
   const categoryList = parents
     .map((p) => {
-      const children = allCategories
-        .filter((c) => c.parentId === p.id)
-        .map((c) => c.name);
+      const children = allCategories.filter((c) => c.parentId === p.id).map((c) => c.name);
       return `${p.emoji} ${p.name}: ${children.join(", ")}`;
     })
     .join("\n");
@@ -93,8 +99,7 @@ Return ONLY the JSON array, no markdown, no backticks, no other text.`;
         messages: [{ role: "user", content: prompt }],
       });
 
-      const text =
-        message.content[0].type === "text" ? message.content[0].text : "";
+      const text = message.content[0].type === "text" ? message.content[0].text : "";
 
       console.log("[categorizer] raw response:", text.substring(0, 200));
 
@@ -121,7 +126,7 @@ Return ONLY the JSON array, no markdown, no backticks, no other text.`;
         }
 
         const cat = allCategories.find(
-          (c) => c.name.toLowerCase() === item.categoryName.toLowerCase()
+          (c) => c.name.toLowerCase() === item.categoryName.toLowerCase(),
         );
         if (cat) {
           allResults.push({
@@ -143,15 +148,10 @@ Return ONLY the JSON array, no markdown, no backticks, no other text.`;
 }
 
 // Apply categorization results to DB
-export async function applyCategorization(
-  results: Map<string, string>
-): Promise<number> {
+export async function applyCategorization(results: Map<string, string>): Promise<number> {
   let count = 0;
   for (const [expenseId, categoryId] of results) {
-    await db
-      .update(expenses)
-      .set({ categoryId })
-      .where(eq(expenses.id, expenseId));
+    await db.update(expenses).set({ categoryId }).where(eq(expenses.id, expenseId));
     count++;
   }
   return count;

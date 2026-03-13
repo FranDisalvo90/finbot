@@ -31,16 +31,17 @@ function parseDate(dateStr: string): string {
   return `${year}-${mm}-${dd}`;
 }
 
-export async function parseVisaGaliciaPDF(
-  buffer: Buffer
-): Promise<ParsedExpense[]> {
+export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense[]> {
   const data = await pdf(buffer);
-  const lines = data.text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = data.text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   const expenses: ParsedExpense[] = [];
 
   // Find the start of expense section
-  let startIdx = lines.findIndex((l) =>
-    l.includes("FECHAREFERENCIACUOTACOMPROBANTE") || l.includes("DETALLE DEL CONSUMO")
+  let startIdx = lines.findIndex(
+    (l) => l.includes("FECHAREFERENCIACUOTACOMPROBANTE") || l.includes("DETALLE DEL CONSUMO"),
   );
   if (startIdx === -1) {
     console.log("[visa-parser] Could not find expense section");
@@ -72,7 +73,10 @@ export async function parseVisaGaliciaPDF(
     // Stop at final total
     if (line.startsWith("TOTAL A PAGAR")) break;
     // Skip TARJETA summary lines but continue parsing (charges come after)
-    if (line.startsWith("TARJETA")) { i++; continue; }
+    if (line.startsWith("TARJETA")) {
+      i++;
+      continue;
+    }
 
     const dateMatch = line.match(dateLineRegex);
     if (!dateMatch) {
@@ -84,9 +88,7 @@ export async function parseVisaGaliciaPDF(
     const date = parseDate(dateStr);
 
     // Check if it's a financial charge (single line with amount at end)
-    const isFinancialCharge = FINANCIAL_CHARGE_PATTERNS.some((p) =>
-      rest.toUpperCase().includes(p)
-    );
+    const isFinancialCharge = FINANCIAL_CHARGE_PATTERNS.some((p) => rest.toUpperCase().includes(p));
 
     // Check for inline USD amount
     const usdMatch = rest.match(usdInlineRegex);
@@ -147,9 +149,7 @@ export async function parseVisaGaliciaPDF(
     // "ASSISTCARD 10/12" or "TUENTI RECARGAS DCP"
     const installmentMatch = rest.match(/(\d+\/\d+)\s*$/);
     const installment = installmentMatch ? installmentMatch[1] : null;
-    const description = installment
-      ? rest.replace(installmentMatch![0], "").trim()
-      : rest.trim();
+    const description = installment ? rest.replace(installmentMatch![0], "").trim() : rest.trim();
 
     // Next line(s): comprobante, then amount
     let sourceRef: string | null = null;
@@ -173,7 +173,11 @@ export async function parseVisaGaliciaPDF(
       }
 
       // If we hit another date line or stop marker, break
-      if (dateLineRegex.test(nextLine) || nextLine.startsWith("TARJETA") || nextLine.startsWith("TOTAL")) {
+      if (
+        dateLineRegex.test(nextLine) ||
+        nextLine.startsWith("TARJETA") ||
+        nextLine.startsWith("TOTAL")
+      ) {
         break;
       }
     }

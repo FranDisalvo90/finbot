@@ -2,11 +2,13 @@ import { Hono } from "hono";
 import { db } from "../db/client.js";
 import { expenses, categories } from "../db/schema.js";
 import { eq, and, sql, desc } from "drizzle-orm";
+import { getUserId } from "../middleware/get-user.js";
 
 export const reportsRoutes = new Hono();
 
 // GET /monthly?month=2026-02
 reportsRoutes.get("/monthly", async (c) => {
+  const userId = getUserId(c);
   const month = c.req.query("month");
   if (!month) return c.json({ error: "month query param required" }, 400);
 
@@ -17,7 +19,7 @@ reportsRoutes.get("/monthly", async (c) => {
     })
     .from(expenses)
     .leftJoin(categories, eq(expenses.categoryId, categories.id))
-    .where(eq(expenses.month, month));
+    .where(and(eq(expenses.month, month), eq(expenses.userId, userId)));
 
   const expenseRows = rows.filter((r) => r.expense.type === "expense");
   const incomeRows = rows.filter((r) => r.expense.type === "income");
@@ -37,7 +39,14 @@ reportsRoutes.get("/monthly", async (c) => {
   // Group by parent category (expenses only)
   const byCategory = new Map<
     string,
-    { id: string; name: string; emoji: string | null; total: number; totalArs: number; totalUsd: number }
+    {
+      id: string;
+      name: string;
+      emoji: string | null;
+      total: number;
+      totalArs: number;
+      totalUsd: number;
+    }
   >();
 
   for (const r of expenseRows) {
@@ -51,8 +60,8 @@ reportsRoutes.get("/monthly", async (c) => {
     } else {
       byCategory.set(parentId, {
         id: parentId,
-        name: cat?.parentId ? "" : cat?.name ?? "Sin categoría",
-        emoji: cat?.parentId ? null : cat?.emoji ?? null,
+        name: cat?.parentId ? "" : (cat?.name ?? "Sin categoría"),
+        emoji: cat?.parentId ? null : (cat?.emoji ?? null),
         total: Number(r.expense.amount),
         totalArs: Number(r.expense.amountArs),
         totalUsd: Number(r.expense.amountUsd),
@@ -61,16 +70,12 @@ reportsRoutes.get("/monthly", async (c) => {
   }
 
   // Resolve parent names for child categories
-  const parentIds = [...byCategory.keys()].filter(
-    (id) => id !== "uncategorized"
-  );
+  const parentIds = [...byCategory.keys()].filter((id) => id !== "uncategorized");
   if (parentIds.length > 0) {
     const parents = await db
       .select()
       .from(categories)
-      .where(
-        sql`${categories.id} IN ${parentIds}`
-      );
+      .where(sql`${categories.id} IN ${parentIds}`);
     for (const p of parents) {
       const entry = byCategory.get(p.id);
       if (entry && !entry.name) {
@@ -99,6 +104,7 @@ reportsRoutes.get("/monthly", async (c) => {
 
 // GET /trend?months=6
 reportsRoutes.get("/trend", async (c) => {
+  const userId = getUserId(c);
   const monthCount = Number(c.req.query("months") ?? 6);
 
   const result = await db
@@ -110,7 +116,7 @@ reportsRoutes.get("/trend", async (c) => {
       count: sql<number>`count(*)::int`,
     })
     .from(expenses)
-    .where(eq(expenses.type, "expense"))
+    .where(and(eq(expenses.type, "expense"), eq(expenses.userId, userId)))
     .groupBy(expenses.month)
     .orderBy(desc(expenses.month))
     .limit(monthCount);
@@ -120,6 +126,7 @@ reportsRoutes.get("/trend", async (c) => {
 
 // GET /breakdown?month=2026-03
 reportsRoutes.get("/breakdown", async (c) => {
+  const userId = getUserId(c);
   const month = c.req.query("month");
   if (!month) return c.json({ error: "month query param required" }, 400);
 
@@ -131,13 +138,13 @@ reportsRoutes.get("/breakdown", async (c) => {
     })
     .from(expenses)
     .leftJoin(categories, eq(expenses.categoryId, categories.id))
-    .where(and(eq(expenses.month, month), eq(expenses.type, "expense")));
+    .where(and(eq(expenses.month, month), eq(expenses.type, "expense"), eq(expenses.userId, userId)));
 
   // Get all parent categories (for name/emoji resolution)
   const allParents = await db
     .select()
     .from(categories)
-    .where(sql`${categories.parentId} IS NULL`);
+    .where(and(sql`${categories.parentId} IS NULL`, eq(categories.userId, userId)));
 
   const parentMap = new Map(allParents.map((p) => [p.id, p]));
 
@@ -217,6 +224,7 @@ reportsRoutes.get("/breakdown", async (c) => {
 
 // GET /category/:id?month=2026-02
 reportsRoutes.get("/category/:id", async (c) => {
+  const userId = getUserId(c);
   const categoryId = c.req.param("id");
   const month = c.req.query("month");
 
@@ -224,12 +232,12 @@ reportsRoutes.get("/category/:id", async (c) => {
   const children = await db
     .select()
     .from(categories)
-    .where(eq(categories.parentId, categoryId));
+    .where(and(eq(categories.parentId, categoryId), eq(categories.userId, userId)));
 
   const childIds = children.map((ch) => ch.id);
   const allIds = [categoryId, ...childIds];
 
-  const conditions = [sql`${expenses.categoryId} IN ${allIds}`];
+  const conditions = [sql`${expenses.categoryId} IN ${allIds}`, eq(expenses.userId, userId)];
   if (month) conditions.push(eq(expenses.month, month));
 
   const rows = await db

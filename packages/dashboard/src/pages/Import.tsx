@@ -30,8 +30,18 @@ interface ConfirmResult {
 }
 
 const MONTH_NAMES = [
-  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+  "Ene",
+  "Feb",
+  "Mar",
+  "Abr",
+  "May",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dic",
 ];
 
 function formatMonth(month: string): string {
@@ -107,9 +117,7 @@ export default function Import() {
     if (!preview) return [];
     if (preview.source === "visa_galicia") return preview.expenses;
     if (!selectedMonth) return preview.expenses;
-    return preview.expenses.filter(
-      (e) => e.date.substring(0, 7) === selectedMonth
-    );
+    return preview.expenses.filter((e) => e.date.substring(0, 7) === selectedMonth);
   }, [preview, selectedMonth]);
 
   const confirm = async () => {
@@ -151,7 +159,7 @@ export default function Import() {
   });
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       <h2 className="text-xl font-semibold text-white">Importar gastos</h2>
 
       {/* Dropzone */}
@@ -203,8 +211,7 @@ export default function Import() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <p className="text-sm text-gray-400">
-                <span className="text-white font-medium">{preview.count}</span>{" "}
-                gastos en{" "}
+                <span className="text-white font-medium">{preview.count}</span> gastos en{" "}
                 <span className="text-white">{preview.fileName}</span> (
                 {preview.source === "visa_galicia" ? "VISA Galicia" : "Splitwise"})
               </p>
@@ -248,9 +255,13 @@ export default function Import() {
 
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400 whitespace-nowrap">Cotización USD (blue venta):</span>
+                <span className="text-sm text-gray-400 whitespace-nowrap">
+                  Cotización USD (blue venta):
+                </span>
                 <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
+                    $
+                  </span>
                   <input
                     type="number"
                     value={exchangeRate}
@@ -293,9 +304,7 @@ export default function Import() {
                   >
                     <td className="p-3 text-gray-400">{e.date}</td>
                     <td className="p-3">{e.description}</td>
-                    <td className="p-3 text-gray-400">
-                      {e.installment ?? "—"}
-                    </td>
+                    <td className="p-3 text-gray-400">{e.installment ?? "—"}</td>
                     <td className="p-3 text-right font-mono">
                       {formatMoney(e.amount, e.currency)}
                     </td>
