@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, CheckCircle, Loader2 } from "lucide-react";
+import { Upload, CheckCircle, Loader2, AlertTriangle } from "lucide-react";
 import { formatMoney } from "../lib/api";
 
 interface PreviewExpense {
@@ -20,6 +20,8 @@ interface UploadResult {
   count: number;
   expenses: PreviewExpense[];
   exchangeRate: number | null;
+  duplicates: number[];
+  duplicateCount: number;
 }
 
 interface ConfirmResult {
@@ -27,6 +29,7 @@ interface ConfirmResult {
   categorizedByRules: number;
   categorizedByAI: number;
   pending: number;
+  skippedDuplicates: number;
 }
 
 const MONTH_NAMES = [
@@ -58,6 +61,7 @@ export default function Import() {
   const [error, setError] = useState<string | null>(null);
   const [paymentMonth, setPaymentMonth] = useState("");
   const [exchangeRate, setExchangeRate] = useState<string>("");
+  const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
 
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0];
@@ -84,6 +88,7 @@ export default function Import() {
       const data: UploadResult = await res.json();
       setPreview(data);
       setExchangeRate(data.exchangeRate ? String(data.exchangeRate) : "");
+      setExcludedIndices(new Set(data.duplicates));
       if (data.months.length > 0) {
         const latest = data.months[data.months.length - 1];
         if (data.source === "visa_galicia") {
@@ -117,10 +122,21 @@ export default function Import() {
 
   const filteredExpenses = useMemo(() => {
     if (!preview) return [];
-    if (preview.source === "visa_galicia") return preview.expenses;
-    if (!selectedMonth) return preview.expenses;
-    return preview.expenses.filter((e) => e.date.substring(0, 7) === selectedMonth);
+    const indexed = preview.expenses.map((expense, i) => ({ expense, originalIndex: i }));
+    if (preview.source === "visa_galicia") return indexed;
+    if (!selectedMonth) return indexed;
+    return indexed.filter((entry) => entry.expense.date.substring(0, 7) === selectedMonth);
   }, [preview, selectedMonth]);
+
+  const duplicateSet = useMemo(
+    () => (preview ? new Set(preview.duplicates) : new Set<number>()),
+    [preview],
+  );
+
+  const includedCount = useMemo(
+    () => filteredExpenses.filter((entry) => !excludedIndices.has(entry.originalIndex)).length,
+    [filteredExpenses, excludedIndices],
+  );
 
   const confirm = async () => {
     if (!preview) return;
@@ -137,6 +153,7 @@ export default function Import() {
         body: JSON.stringify({
           previewId: preview.previewId,
           exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
+          excludeIndices: [...excludedIndices],
           ...(preview.source === "visa_galicia"
             ? { overrideMonth: paymentMonth }
             : { month: selectedMonth || undefined }),
@@ -206,6 +223,9 @@ export default function Import() {
           <p className="text-sm text-gray-400">
             {result.total} gastos importados, {result.categorizedByRules + result.categorizedByAI}{" "}
             categorizados, {result.pending} pendientes
+            {result.skippedDuplicates > 0 && (
+              <>, {result.skippedDuplicates} duplicados omitidos</>
+            )}
           </p>
         </div>
       )}
@@ -253,7 +273,7 @@ export default function Import() {
                     </select>
                   )}
                   <span className="text-sm text-gray-500">
-                    {filteredExpenses.length} gastos en {formatMonth(selectedMonth)}
+                    {includedCount} gastos en {formatMonth(selectedMonth)}
                   </span>
                 </>
               )}
@@ -279,21 +299,53 @@ export default function Import() {
               </div>
               <button
                 onClick={confirm}
-                disabled={confirming || filteredExpenses.length === 0}
+                disabled={confirming || includedCount === 0}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
               >
                 {confirming && <Loader2 size={16} className="animate-spin" />}
-                {preview.source === "visa_galicia" && paymentMonth
-                  ? `Importar ${formatMonth(paymentMonth)}`
-                  : `Importar ${formatMonth(selectedMonth)}`}
+                Importar {includedCount} gastos
               </button>
             </div>
           </div>
+
+          {preview.duplicateCount > 0 && (
+            <div className="bg-amber-900/20 border border-amber-800 rounded-lg p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-400 text-sm">
+                <AlertTriangle size={16} />
+                Se encontraron {preview.duplicateCount} gastos que ya existen. Están excluidos por
+                defecto.
+              </div>
+              <button
+                onClick={() => {
+                  const allExcluded = preview.duplicates.every((i) => excludedIndices.has(i));
+                  if (allExcluded) {
+                    setExcludedIndices((prev) => {
+                      const next = new Set(prev);
+                      preview.duplicates.forEach((i) => next.delete(i));
+                      return next;
+                    });
+                  } else {
+                    setExcludedIndices((prev) => {
+                      const next = new Set(prev);
+                      preview.duplicates.forEach((i) => next.add(i));
+                      return next;
+                    });
+                  }
+                }}
+                className="text-sm text-amber-400 hover:text-amber-300 underline whitespace-nowrap"
+              >
+                {preview.duplicates.every((i) => excludedIndices.has(i))
+                  ? "Incluir todos"
+                  : "Excluir duplicados"}
+              </button>
+            </div>
+          )}
 
           <div className="bg-dark-card rounded-xl border border-dark-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-dark-border text-gray-500">
+                  <th className="w-10 p-3"></th>
                   <th className="text-left p-3">Fecha</th>
                   <th className="text-left p-3">Descripción</th>
                   <th className="text-left p-3">Cuota</th>
@@ -301,24 +353,57 @@ export default function Import() {
                 </tr>
               </thead>
               <tbody>
-                {filteredExpenses.map((e, i) => (
-                  <tr
-                    key={i}
-                    className={`border-b border-dark-border ${
-                      e.isFinancialCharge ? "text-gray-600" : ""
-                    }`}
-                  >
-                    <td className="p-3 text-gray-400">{e.date}</td>
-                    <td className="p-3">{e.description}</td>
-                    <td className="p-3 text-gray-400">{e.installment ?? "—"}</td>
-                    <td className="p-3 text-right font-mono">
-                      {formatMoney(e.amount, e.currency)}
-                    </td>
-                  </tr>
-                ))}
+                {filteredExpenses.map(({ expense: e, originalIndex }) => {
+                  const isDuplicate = duplicateSet.has(originalIndex);
+                  const isExcluded = excludedIndices.has(originalIndex);
+                  return (
+                    <tr
+                      key={originalIndex}
+                      className={`border-b border-dark-border ${
+                        isDuplicate ? "bg-amber-900/10" : ""
+                      } ${e.isFinancialCharge ? "text-gray-600" : ""} ${
+                        isExcluded ? "opacity-50" : ""
+                      }`}
+                    >
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={!isExcluded}
+                          onChange={() => {
+                            setExcludedIndices((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(originalIndex)) {
+                                next.delete(originalIndex);
+                              } else {
+                                next.add(originalIndex);
+                              }
+                              return next;
+                            });
+                          }}
+                          className="rounded border-dark-border"
+                        />
+                      </td>
+                      <td className="p-3 text-gray-400">{e.date}</td>
+                      <td className="p-3">
+                        <span className="flex items-center gap-2">
+                          {e.description}
+                          {isDuplicate && (
+                            <span className="text-xs bg-amber-800/50 text-amber-400 px-1.5 py-0.5 rounded">
+                              Duplicado
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="p-3 text-gray-400">{e.installment ?? "—"}</td>
+                      <td className="p-3 text-right font-mono">
+                        {formatMoney(e.amount, e.currency)}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {filteredExpenses.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-6 text-center text-gray-500">
+                    <td colSpan={5} className="p-6 text-center text-gray-500">
                       No hay gastos para este mes
                     </td>
                   </tr>
