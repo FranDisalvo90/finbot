@@ -138,15 +138,16 @@ export default function Dashboard() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
 
-  // Income form state
-  const [showIncomeForm, setShowIncomeForm] = useState(false);
-  const [incomeDesc, setIncomeDesc] = useState("");
-  const [incomeAmount, setIncomeAmount] = useState("");
-  const [incomeCurrency, setIncomeCurrency] = useState<"ARS" | "USD">("ARS");
-  const [incomeDate, setIncomeDate] = useState(lastDayOfMonth(getCurrentMonth()));
-  const [incomeCategoryId, setIncomeCategoryId] = useState("");
+  // Entry form state
+  const [showEntryForm, setShowEntryForm] = useState(false);
+  const [entryType, setEntryType] = useState<"expense" | "income">("expense");
+  const [entryDesc, setEntryDesc] = useState("");
+  const [entryAmount, setEntryAmount] = useState("");
+  const [entryCurrency, setEntryCurrency] = useState<"ARS" | "USD">("ARS");
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
+  const [entryCategoryId, setEntryCategoryId] = useState("");
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
-  const [savingIncome, setSavingIncome] = useState(false);
+  const [savingEntry, setSavingEntry] = useState(false);
 
   const fmt = currency === "ARS" ? formatARS : formatUSD;
   const pickTotal = (r: { totalArs: number; totalUsd: number }) =>
@@ -155,6 +156,10 @@ export default function Dashboard() {
   // Find INGRESOS parent category and its children
   const ingresosParent = categories.find((c) => c.name === "INGRESOS");
   const incomeSubcategories = ingresosParent?.children ?? [];
+  // Expense categories: all except INGRESOS
+  const expenseCategories = categories.filter((c) => c.name !== "INGRESOS");
+
+  const isIncome = entryType === "income";
 
   useEffect(() => {
     api<Category[]>("/categories").then(setCategories);
@@ -173,7 +178,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     refresh();
-    setIncomeDate(lastDayOfMonth(month));
   }, [month]);
 
   const deleteExpense = async (expenseId: string) => {
@@ -221,31 +225,38 @@ export default function Dashboard() {
     refresh();
   };
 
-  const saveIncome = async () => {
-    if (!incomeDesc || !incomeAmount || !incomeCategoryId) return;
-    setSavingIncome(true);
+  const handleTypeSwitch = (type: "expense" | "income") => {
+    setEntryType(type);
+    setEntryCategoryId("");
+    setEntryDate(type === "income" ? lastDayOfMonth(month) : new Date().toISOString().slice(0, 10));
+  };
+
+  const saveEntry = async () => {
+    if (!entryDesc || !entryAmount) return;
+    if (isIncome && !entryCategoryId) return;
+    setSavingEntry(true);
     try {
       await api("/expenses", {
         method: "POST",
         body: JSON.stringify({
-          description: incomeDesc,
-          amount: incomeAmount,
-          currency: incomeCurrency,
-          date: incomeDate,
-          categoryId: incomeCategoryId,
-          type: "income",
+          description: entryDesc,
+          amount: entryAmount,
+          currency: entryCurrency,
+          date: entryDate,
+          categoryId: entryCategoryId || undefined,
+          type: entryType,
           exchangeRate,
         }),
       });
-      setShowIncomeForm(false);
-      setIncomeDesc("");
-      setIncomeAmount("");
-      setIncomeCurrency("ARS");
-      setIncomeDate(lastDayOfMonth(month));
-      setIncomeCategoryId("");
+      setShowEntryForm(false);
+      setEntryDesc("");
+      setEntryAmount("");
+      setEntryCurrency("ARS");
+      setEntryDate(entryType === "income" ? lastDayOfMonth(month) : new Date().toISOString().slice(0, 10));
+      setEntryCategoryId("");
       refresh();
     } finally {
-      setSavingIncome(false);
+      setSavingEntry(false);
     }
   };
 
@@ -542,34 +553,56 @@ export default function Dashboard() {
 
       {/* Floating Action Button */}
       <button
-        onClick={() => setShowIncomeForm(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-900/30 flex items-center justify-center transition-all hover:scale-105 z-50"
+        onClick={() => setShowEntryForm(true)}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-900/30 flex items-center justify-center transition-all hover:scale-105 z-50"
       >
         <Plus size={24} />
       </button>
 
       {/* Side Panel Overlay */}
       <div
-        className={`fixed inset-0 z-50 transition-opacity duration-300 ${showIncomeForm ? "pointer-events-auto" : "pointer-events-none"}`}
+        className={`fixed inset-0 z-50 transition-opacity duration-300 ${showEntryForm ? "pointer-events-auto" : "pointer-events-none"}`}
       >
         {/* Backdrop */}
         <div
-          className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${showIncomeForm ? "opacity-100" : "opacity-0"}`}
-          onClick={() => setShowIncomeForm(false)}
+          className={`absolute inset-0 bg-black/50 transition-opacity duration-300 ${showEntryForm ? "opacity-100" : "opacity-0"}`}
+          onClick={() => setShowEntryForm(false)}
         />
         {/* Panel */}
         <div
-          className={`absolute top-0 right-0 h-full w-full max-w-md bg-dark-bg border-l border-dark-border shadow-2xl transition-transform duration-300 ease-out ${showIncomeForm ? "translate-x-0" : "translate-x-full"}`}
+          className={`absolute top-0 right-0 h-full w-full max-w-md bg-dark-bg border-l border-dark-border shadow-2xl transition-transform duration-300 ease-out ${showEntryForm ? "translate-x-0" : "translate-x-full"}`}
         >
           <div className="flex flex-col h-full p-6">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-white">Nuevo ingreso</h2>
+              <h2 className="text-lg font-semibold text-white">
+                {isIncome ? "Nuevo ingreso" : "Nuevo gasto"}
+              </h2>
               <button
-                onClick={() => setShowIncomeForm(false)}
+                onClick={() => setShowEntryForm(false)}
                 className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-dark-hover transition-colors"
               >
                 <X size={20} />
+              </button>
+            </div>
+
+            {/* Type Toggle */}
+            <div className="flex bg-dark-card rounded-lg border border-dark-border p-0.5 mb-4">
+              <button
+                onClick={() => handleTypeSwitch("expense")}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  entryType === "expense" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                Gasto
+              </button>
+              <button
+                onClick={() => handleTypeSwitch("income")}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  entryType === "income" ? "bg-green-600 text-white" : "text-gray-400 hover:text-white"
+                }`}
+              >
+                Ingreso
               </button>
             </div>
 
@@ -579,10 +612,10 @@ export default function Dashboard() {
                 <label className="block text-sm text-gray-400 mb-1.5">Descripción</label>
                 <input
                   type="text"
-                  placeholder="Ej: Sueldo marzo"
-                  value={incomeDesc}
-                  onChange={(e) => setIncomeDesc(e.target.value)}
-                  className="w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-600"
+                  placeholder={isIncome ? "Ej: Sueldo marzo" : "Ej: Supermercado"}
+                  value={entryDesc}
+                  onChange={(e) => setEntryDesc(e.target.value)}
+                  className={`w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none ${isIncome ? "focus:border-green-600" : "focus:border-blue-600"}`}
                 />
               </div>
 
@@ -593,23 +626,27 @@ export default function Dashboard() {
                     type="text"
                     inputMode="decimal"
                     placeholder="0,00"
-                    value={formatAmountInput(incomeAmount)}
-                    onChange={(e) => setIncomeAmount(parseAmountInput(e.target.value))}
-                    className="flex-1 bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-600"
+                    value={formatAmountInput(entryAmount)}
+                    onChange={(e) => setEntryAmount(parseAmountInput(e.target.value))}
+                    className={`flex-1 bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none ${isIncome ? "focus:border-green-600" : "focus:border-blue-600"}`}
                   />
                   <div className="flex bg-dark-card rounded-lg border border-dark-border p-0.5 shrink-0">
                     <button
-                      onClick={() => setIncomeCurrency("ARS")}
+                      onClick={() => setEntryCurrency("ARS")}
                       className={`px-3 py-2 rounded-md text-xs font-medium transition-colors ${
-                        incomeCurrency === "ARS" ? "bg-green-600 text-white" : "text-gray-400"
+                        entryCurrency === "ARS"
+                          ? isIncome ? "bg-green-600 text-white" : "bg-blue-600 text-white"
+                          : "text-gray-400"
                       }`}
                     >
                       ARS
                     </button>
                     <button
-                      onClick={() => setIncomeCurrency("USD")}
+                      onClick={() => setEntryCurrency("USD")}
                       className={`px-3 py-2 rounded-md text-xs font-medium transition-colors ${
-                        incomeCurrency === "USD" ? "bg-green-600 text-white" : "text-gray-400"
+                        entryCurrency === "USD"
+                          ? isIncome ? "bg-green-600 text-white" : "bg-blue-600 text-white"
+                          : "text-gray-400"
                       }`}
                     >
                       USD
@@ -627,36 +664,49 @@ export default function Dashboard() {
                 <label className="block text-sm text-gray-400 mb-1.5">Fecha</label>
                 <input
                   type="date"
-                  value={incomeDate}
-                  onChange={(e) => setIncomeDate(e.target.value)}
-                  className="w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-green-600"
+                  value={entryDate}
+                  onChange={(e) => setEntryDate(e.target.value)}
+                  className={`w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none ${isIncome ? "focus:border-green-600" : "focus:border-blue-600"}`}
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">Subcategoría</label>
-                <select
-                  value={incomeCategoryId}
-                  onChange={(e) => setIncomeCategoryId(e.target.value)}
-                  className="w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-green-600"
-                >
-                  <option value="">Seleccionar...</option>
-                  {incomeSubcategories.map((sc) => (
-                    <option key={sc.id} value={sc.id}>
-                      {sc.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm text-gray-400 mb-1.5">
+                  {isIncome ? "Subcategoría" : "Categoría"}
+                </label>
+                {isIncome ? (
+                  <select
+                    value={entryCategoryId}
+                    onChange={(e) => setEntryCategoryId(e.target.value)}
+                    className="w-full bg-dark-card border border-dark-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-green-600"
+                  >
+                    <option value="">Seleccionar...</option>
+                    {incomeSubcategories.map((sc) => (
+                      <option key={sc.id} value={sc.id}>
+                        {sc.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <CategoryPicker
+                    categories={expenseCategories}
+                    value={entryCategoryId ? (() => {
+                      const child = expenseCategories.flatMap(c => c.children).find(ch => ch.id === entryCategoryId);
+                      return child ? { id: child.id, name: child.name, emoji: null } : null;
+                    })() : null}
+                    onSelect={(catId) => setEntryCategoryId(catId)}
+                  />
+                )}
               </div>
             </div>
 
             {/* Submit */}
             <button
-              onClick={saveIncome}
-              disabled={savingIncome || !incomeDesc || !incomeAmount || !incomeCategoryId}
-              className="w-full mt-6 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+              onClick={saveEntry}
+              disabled={savingEntry || !entryDesc || !entryAmount || (isIncome && !entryCategoryId)}
+              className={`w-full mt-6 px-4 py-3 ${isIncome ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"} disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors`}
             >
-              {savingIncome ? "Guardando..." : "Guardar ingreso"}
+              {savingEntry ? "Guardando..." : isIncome ? "Guardar ingreso" : "Guardar gasto"}
             </button>
           </div>
         </div>
