@@ -1,7 +1,18 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, CheckCircle, Loader2, AlertTriangle } from "lucide-react";
-import { formatMoney } from "../lib/api";
+import { Upload, CheckCircle, Loader2, AlertTriangle, RefreshCw, Unlink, Link } from "lucide-react";
+import {
+  formatMoney,
+  api,
+  getSplitwiseStatus,
+  getSplitwiseGroups,
+  selectSplitwiseGroup,
+  syncSplitwise,
+  disconnectSplitwise,
+  type SplitwiseStatus,
+  type SplitwiseGroup,
+  type SyncResult as SplitwiseSyncResult,
+} from "../lib/api";
 
 interface PreviewExpense {
   date: string;
@@ -62,6 +73,101 @@ export default function Import() {
   const [paymentMonth, setPaymentMonth] = useState("");
   const [exchangeRate, setExchangeRate] = useState<string>("");
   const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
+
+  // Splitwise state
+  const [swStatus, setSwStatus] = useState<SplitwiseStatus | null>(null);
+  const [swGroups, setSwGroups] = useState<SplitwiseGroup[]>([]);
+  const [swSelectedGroup, setSwSelectedGroup] = useState<number | null>(null);
+  const [swSyncing, setSwSyncing] = useState(false);
+  const [swSyncResult, setSwSyncResult] = useState<SplitwiseSyncResult | null>(null);
+  const [swError, setSwError] = useState<string | null>(null);
+  const [swLoading, setSwLoading] = useState(true);
+  const [swShowGroupSelect, setSwShowGroupSelect] = useState(false);
+
+  // Load Splitwise status on mount
+  useEffect(() => {
+    getSplitwiseStatus()
+      .then(setSwStatus)
+      .catch(() => setSwStatus({ connected: false, groupId: null, groupName: null, lastSyncAt: null }))
+      .finally(() => setSwLoading(false));
+  }, []);
+
+  // Handle ?splitwise=connected from OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("splitwise") === "connected") {
+      window.history.replaceState({}, "", "/import");
+      getSplitwiseStatus().then(setSwStatus);
+    }
+  }, []);
+
+  const handleSwConnect = async () => {
+    try {
+      const data = await api<{ url: string }>("/splitwise/connect");
+      window.location.href = data.url;
+    } catch (e: unknown) {
+      setSwError(e instanceof Error ? e.message : "Error al conectar");
+    }
+  };
+
+  const handleSwLoadGroups = async () => {
+    setSwError(null);
+    try {
+      const data = await getSplitwiseGroups();
+      setSwGroups(data.groups);
+      setSwShowGroupSelect(true);
+    } catch (e: unknown) {
+      setSwError(e instanceof Error ? e.message : "Error al cargar grupos");
+    }
+  };
+
+  const handleSwSelectGroup = async () => {
+    if (!swSelectedGroup) return;
+    const group = swGroups.find((g) => g.id === swSelectedGroup);
+    if (!group) return;
+    setSwError(null);
+    try {
+      await selectSplitwiseGroup(group.id, group.name);
+      setSwStatus((prev) => prev ? { ...prev, groupId: group.id, groupName: group.name, lastSyncAt: null } : prev);
+      setSwShowGroupSelect(false);
+      setSwSyncResult(null);
+    } catch (e: unknown) {
+      setSwError(e instanceof Error ? e.message : "Error al seleccionar grupo");
+    }
+  };
+
+  const handleSwSync = async () => {
+    setSwSyncing(true);
+    setSwError(null);
+    setSwSyncResult(null);
+    try {
+      const result = await syncSplitwise();
+      setSwSyncResult(result);
+      const status = await getSplitwiseStatus();
+      setSwStatus(status);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Error al sincronizar";
+      if (msg.includes("splitwise_auth_expired")) {
+        setSwStatus({ connected: false, groupId: null, groupName: null, lastSyncAt: null });
+        setSwError("La conexion con Splitwise expiro. Reconecta tu cuenta.");
+      } else {
+        setSwError(msg);
+      }
+    } finally {
+      setSwSyncing(false);
+    }
+  };
+
+  const handleSwDisconnect = async () => {
+    try {
+      await disconnectSplitwise();
+      setSwStatus({ connected: false, groupId: null, groupName: null, lastSyncAt: null });
+      setSwSyncResult(null);
+      setSwShowGroupSelect(false);
+    } catch (e: unknown) {
+      setSwError(e instanceof Error ? e.message : "Error al desconectar");
+    }
+  };
 
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0];
@@ -184,6 +290,145 @@ export default function Import() {
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-white">Importar gastos</h2>
+
+      {/* Splitwise Sync Section */}
+      {!swLoading && swStatus && (
+        <div className="bg-dark-card rounded-xl border border-dark-border p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-white font-medium">Splitwise</h3>
+            {swStatus.connected && (
+              <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded">
+                Conectado
+              </span>
+            )}
+          </div>
+
+          {!swStatus.connected ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-400">
+                Sincroniza tus gastos de Splitwise automaticamente.
+              </p>
+              <button
+                onClick={handleSwConnect}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+              >
+                <Link size={16} />
+                Conectar Splitwise
+              </button>
+            </div>
+          ) : !swStatus.groupId || swShowGroupSelect ? (
+            <div className="space-y-3">
+              {!swShowGroupSelect && (
+                <button
+                  onClick={handleSwLoadGroups}
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                >
+                  Selecciona un grupo para sincronizar
+                </button>
+              )}
+              {swShowGroupSelect && (
+                <div className="flex items-center gap-3">
+                  <select
+                    value={swSelectedGroup ?? ""}
+                    onChange={(e) => setSwSelectedGroup(Number(e.target.value))}
+                    className="bg-dark-bg border border-dark-border rounded-lg px-3 py-1.5 text-sm text-white flex-1"
+                  >
+                    <option value="">Seleccionar grupo...</option>
+                    {swGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleSwSelectGroup}
+                    disabled={!swSelectedGroup}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium disabled:opacity-50"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={handleSwDisconnect}
+                className="text-xs text-gray-500 hover:text-gray-400 flex items-center gap-1"
+              >
+                <Unlink size={12} />
+                Desconectar
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-400">
+                  <span className="text-white">Grupo: {swStatus.groupName}</span>
+                  <button
+                    onClick={handleSwLoadGroups}
+                    className="ml-2 text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    Cambiar
+                  </button>
+                  {swStatus.lastSyncAt && (
+                    <span className="ml-3">
+                      Ultima sync:{" "}
+                      {new Date(swStatus.lastSyncAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSwSync}
+                  disabled={swSyncing}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                >
+                  {swSyncing ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
+                  Sincronizar
+                </button>
+                <button
+                  onClick={handleSwDisconnect}
+                  className="text-xs text-gray-500 hover:text-gray-400 flex items-center gap-1"
+                >
+                  <Unlink size={12} />
+                  Desconectar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {swError && (
+            <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 text-red-400 text-sm">
+              {swError}
+            </div>
+          )}
+
+          {swSyncResult && (
+            <div className="bg-green-900/20 border border-green-800 rounded-lg p-3 space-y-1">
+              <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
+                <CheckCircle size={16} />
+                Sincronizacion completada
+              </div>
+              <p className="text-sm text-gray-400">
+                {swSyncResult.inserted} nuevos, {swSyncResult.updated} actualizados,{" "}
+                {swSyncResult.deleted} eliminados, {swSyncResult.categorized} categorizados
+                {swSyncResult.exchangeRate && (
+                  <span className="ml-2">(USD blue: ${swSyncResult.exchangeRate})</span>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Dropzone */}
       <div

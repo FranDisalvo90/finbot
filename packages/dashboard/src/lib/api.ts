@@ -55,3 +55,46 @@ export function getCurrentMonth(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
+
+export interface SplitwiseStatus {
+  connected: boolean;
+  groupId: number | null;
+  groupName: string | null;
+  lastSyncAt: string | null;
+}
+
+export interface SplitwiseGroup {
+  id: number;
+  name: string;
+}
+
+export interface SyncResult {
+  inserted: number;
+  updated: number;
+  deleted: number;
+  categorized: number;
+  exchangeRate: number | null;
+}
+
+export function getSplitwiseStatus(): Promise<SplitwiseStatus> {
+  return api<SplitwiseStatus>("/splitwise/status");
+}
+
+export function getSplitwiseGroups(): Promise<{ groups: SplitwiseGroup[] }> {
+  return api<{ groups: SplitwiseGroup[] }>("/splitwise/groups");
+}
+
+export function selectSplitwiseGroup(groupId: number, groupName: string): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>("/splitwise/group", {
+    method: "POST",
+    body: JSON.stringify({ groupId, groupName }),
+  });
+}
+
+export function syncSplitwise(): Promise<SyncResult> {
+  return api<SyncResult>("/splitwise/sync", { method: "POST" });
+}
+
+export function disconnectSplitwise(): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>("/splitwise/disconnect", { method: "POST" });
+}
