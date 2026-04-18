@@ -85,6 +85,10 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   picture: text("picture"),
+  splitwiseAccessToken: text("splitwise_access_token"),
+  splitwiseUserId: integer("splitwise_user_id"),
+  splitwiseGroupId: integer("splitwise_group_id"),
+  splitwiseGroupName: text("splitwise_group_name"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -96,4 +100,15 @@ export const imports = pgTable("imports", {
   month: text("month"),
   expenseCount: integer("expense_count"),
   importedAt: timestamp("imported_at").defaultNow(),
+});
+
+export const splitwiseSyncState = pgTable("splitwise_sync_state", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull()
+    .unique(),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastUpdatedAt: timestamp("last_updated_at"),
+  createdAt: timestamp("created_at").defaultNow(),
 });

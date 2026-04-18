@@ -12,4 +12,7 @@ export const env = {
   PORT: Number(process.env.PORT ?? 3001),
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
   JWT_SECRET: process.env.JWT_SECRET ?? "change-me-in-production",
+  SPLITWISE_CLIENT_ID: process.env.SPLITWISE_CLIENT_ID ?? "",
+  SPLITWISE_CLIENT_SECRET: process.env.SPLITWISE_CLIENT_SECRET ?? "",
+  SPLITWISE_REDIRECT_URI: process.env.SPLITWISE_REDIRECT_URI ?? "http://localhost:3001/api/splitwise/callback",
 };
