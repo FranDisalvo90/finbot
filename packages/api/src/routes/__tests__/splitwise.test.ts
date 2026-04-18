@@ -134,6 +134,17 @@ describe("full sync flow (mocked Splitwise API)", () => {
         });
       }
 
+      if (urlStr.includes("anthropic.com")) {
+        return new Response(JSON.stringify({
+          content: [{ type: "text", text: "[]" }],
+          model: "claude-sonnet-4-20250514",
+          role: "assistant",
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       // Fall through to original fetch for DB connections etc.
       return originalFetch(url as string | URL | Request);
     }) as typeof fetch;

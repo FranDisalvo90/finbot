@@ -98,3 +98,8 @@ export function syncSplitwise(): Promise<SyncResult> {
 export function disconnectSplitwise(): Promise<{ ok: boolean }> {
   return api<{ ok: boolean }>("/splitwise/disconnect", { method: "POST" });
 }
+
+export async function connectSplitwise(): Promise<void> {
+  const data = await api<{ url: string }>("/splitwise/connect");
+  window.location.href = data.url;
+}

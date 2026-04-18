@@ -89,6 +89,10 @@ splitwiseRoutes.post("/group", async (c) => {
   const userId = getUserId(c);
   const { groupId, groupName } = await c.req.json();
 
+  if (typeof groupId !== "number" || typeof groupName !== "string") {
+    return c.json({ error: "groupId (number) and groupName (string) required" }, 400);
+  }
+
   const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user?.splitwiseAccessToken) {
     return c.json({ error: "Splitwise not connected" }, 400);

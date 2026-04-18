@@ -3,12 +3,12 @@ import { useDropzone } from "react-dropzone";
 import { Upload, CheckCircle, Loader2, AlertTriangle, RefreshCw, Unlink, Link } from "lucide-react";
 import {
   formatMoney,
-  api,
   getSplitwiseStatus,
   getSplitwiseGroups,
   selectSplitwiseGroup,
   syncSplitwise,
   disconnectSplitwise,
+  connectSplitwise,
   type SplitwiseStatus,
   type SplitwiseGroup,
   type SyncResult as SplitwiseSyncResult,
@@ -103,8 +103,7 @@ export default function Import() {
 
   const handleSwConnect = async () => {
     try {
-      const data = await api<{ url: string }>("/splitwise/connect");
-      window.location.href = data.url;
+      await connectSplitwise();
     } catch (e: unknown) {
       setSwError(e instanceof Error ? e.message : "Error al conectar");
     }

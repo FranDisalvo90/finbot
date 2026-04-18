@@ -38,4 +38,26 @@ describe("splitwiseFetch", () => {
 
     await expect(splitwiseFetch("/get_expenses", "token")).rejects.toThrow("Splitwise API error: 500");
   });
+
+  it("retries on 429 and succeeds on next attempt", async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 429 })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ expenses: [] }),
+      });
+
+    const result = await splitwiseFetch<{ expenses: [] }>("/get_expenses", "token");
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ expenses: [] });
+  });
+
+  it("throws after max retries on persistent 429", async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 429 });
+
+    await expect(splitwiseFetch("/get_expenses", "token")).rejects.toThrow("429 (max retries exceeded)");
+    expect(mockFetch).toHaveBeenCalledTimes(4); // initial + 3 retries
+  });
 });
