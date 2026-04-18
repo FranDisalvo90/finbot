@@ -7,23 +7,12 @@ import { parseSplitweiseCSV } from "../services/parsers/splitwise.js";
 import { applyRules, categorizeBatch, applyCategorization } from "../services/categorizer.js";
 import type { ParsedExpense } from "../services/parsers/visa-galicia.js";
 import { getUserId } from "../middleware/get-user.js";
+import { fetchBlueRate } from "../services/exchange-rate.js";
 
 export const importRoutes = new Hono();
 
 // In-memory store for previews (per-session, simple approach)
 const previews = new Map<string, { expenses: ParsedExpense[]; source: string; fileName: string }>();
-
-// Fetch blue dollar sell rate from dolarapi.com
-async function fetchBlueRate(): Promise<number | null> {
-  try {
-    const res = await fetch("https://dolarapi.com/v1/dolares/blue");
-    if (!res.ok) return null;
-    const data = (await res.json()) as { venta: number };
-    return data.venta;
-  } catch {
-    return null;
-  }
-}
 
 // POST /upload — parse file, return preview
 importRoutes.post("/upload", async (c) => {
