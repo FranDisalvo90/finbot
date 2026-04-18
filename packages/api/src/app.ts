@@ -10,6 +10,7 @@ import { expensesRoutes } from "./routes/expenses.js";
 import { reportsRoutes } from "./routes/reports.js";
 import { importRoutes } from "./routes/import.js";
 import { rulesRoutes } from "./routes/rules.js";
+import { splitwiseRoutes, splitwiseCallbackHandler } from "./routes/splitwise.js";
 
 const app = new Hono();
 
@@ -18,6 +19,7 @@ app.use("*", cors());
 // Public routes
 app.route("/api/auth", authRoutes);
 app.get("/api/health", (c) => c.json({ ok: true }));
+app.get("/api/splitwise/callback", splitwiseCallbackHandler);
 
 // Protected routes
 app.use("/api/*", authMiddleware);
@@ -26,6 +28,7 @@ app.route("/api/expenses", expensesRoutes);
 app.route("/api/reports", reportsRoutes);
 app.route("/api/import", importRoutes);
 app.route("/api/rules", rulesRoutes);
+app.route("/api/splitwise", splitwiseRoutes);
 
 // Serve dashboard static files in production
 // root is relative to CWD (which is /app in Docker)
