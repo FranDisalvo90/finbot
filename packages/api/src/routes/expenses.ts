@@ -2,17 +2,17 @@ import { Hono } from "hono";
 import { db } from "../db/client.js";
 import { expenses, categories } from "../db/schema.js";
 import { eq, isNull, and, desc } from "drizzle-orm";
-import { getUserId } from "../middleware/get-user.js";
+import { getUserId, getHouseholdId } from "../middleware/get-user.js";
 
 export const expensesRoutes = new Hono();
 
 // GET / — list with filters
 expensesRoutes.get("/", async (c) => {
-  const userId = getUserId(c);
+  const householdId = getHouseholdId(c);
   const month = c.req.query("month");
   const uncategorized = c.req.query("uncategorized");
 
-  const conditions = [eq(expenses.userId, userId)];
+  const conditions = [eq(expenses.householdId, householdId)];
   if (month) conditions.push(eq(expenses.month, month));
   if (uncategorized === "true") conditions.push(isNull(expenses.categoryId));
 
@@ -31,6 +31,7 @@ expensesRoutes.get("/", async (c) => {
 
 // POST / — create manual
 expensesRoutes.post("/", async (c) => {
+  const householdId = getHouseholdId(c);
   const userId = getUserId(c);
   const body = await c.req.json();
   const currency = body.currency ?? "ARS";
@@ -51,7 +52,8 @@ expensesRoutes.post("/", async (c) => {
   const [created] = await db
     .insert(expenses)
     .values({
-      userId,
+      householdId,
+      createdBy: userId,
       amount: String(amount),
       currency,
       description: body.description,
@@ -70,7 +72,7 @@ expensesRoutes.post("/", async (c) => {
 
 // PUT /:id — update
 expensesRoutes.put("/:id", async (c) => {
-  const userId = getUserId(c);
+  const householdId = getHouseholdId(c);
   const id = c.req.param("id");
   const body = await c.req.json();
 
@@ -78,7 +80,7 @@ expensesRoutes.put("/:id", async (c) => {
   const [existing] = await db
     .select()
     .from(expenses)
-    .where(and(eq(expenses.id, id), eq(expenses.userId, userId)));
+    .where(and(eq(expenses.id, id), eq(expenses.householdId, householdId)));
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   const updates: Record<string, unknown> = {};
@@ -117,15 +119,15 @@ expensesRoutes.put("/:id", async (c) => {
   const [updated] = await db
     .update(expenses)
     .set(updates)
-    .where(and(eq(expenses.id, id), eq(expenses.userId, userId)))
+    .where(and(eq(expenses.id, id), eq(expenses.householdId, householdId)))
     .returning();
   return c.json(updated);
 });
 
 // DELETE /:id
 expensesRoutes.delete("/:id", async (c) => {
-  const userId = getUserId(c);
+  const householdId = getHouseholdId(c);
   const id = c.req.param("id");
-  await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.userId, userId)));
+  await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.householdId, householdId)));
   return c.json({ ok: true });
 });

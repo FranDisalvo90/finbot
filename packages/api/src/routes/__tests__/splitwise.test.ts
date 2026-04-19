@@ -6,8 +6,28 @@ import { users, expenses, splitwiseSyncState } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 
 let auth: Record<string, string>;
+let testUserId: string;
+let testHouseholdId: string;
+
 beforeAll(async () => {
   auth = await authHeader();
+  // Decode JWT to get user ID and household ID
+  const token = auth.Authorization.split(" ")[1];
+  const [, payload] = token.split(".");
+  const decoded = JSON.parse(Buffer.from(payload, "base64url").toString());
+  testUserId = decoded.sub;
+  testHouseholdId = decoded.householdId;
+
+  // Ensure test user starts without Splitwise credentials
+  await db
+    .update(users)
+    .set({
+      splitwiseAccessToken: null,
+      splitwiseUserId: null,
+      splitwiseGroupId: null,
+      splitwiseGroupName: null,
+    })
+    .where(eq(users.id, testUserId));
 });
 
 const json = async (res: Response) => res.json();
@@ -58,15 +78,6 @@ describe("POST /api/splitwise/disconnect", () => {
 
 describe("full sync flow (mocked Splitwise API)", () => {
   const originalFetch = global.fetch;
-  let testUserId: string;
-
-  beforeAll(async () => {
-    // Get the test user ID by decoding the JWT
-    const token = auth.Authorization.split(" ")[1];
-    const [, payload] = token.split(".");
-    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString());
-    testUserId = decoded.sub;
-  });
 
   afterAll(() => {
     global.fetch = originalFetch;
@@ -85,7 +96,7 @@ describe("full sync flow (mocked Splitwise API)", () => {
       .where(eq(users.id, testUserId));
 
     // Clear any existing sync state
-    await db.delete(splitwiseSyncState).where(eq(splitwiseSyncState.userId, testUserId));
+    await db.delete(splitwiseSyncState).where(eq(splitwiseSyncState.householdId, testHouseholdId));
 
     // 2. Mock fetch for Splitwise API + dolarapi
     global.fetch = vi.fn(async (url: string | URL | Request) => {
@@ -170,7 +181,7 @@ describe("full sync flow (mocked Splitwise API)", () => {
       .from(expenses)
       .where(
         and(
-          eq(expenses.userId, testUserId),
+          eq(expenses.householdId, testHouseholdId),
           eq(expenses.sourceRef, "9001"),
         ),
       );
@@ -185,7 +196,7 @@ describe("full sync flow (mocked Splitwise API)", () => {
     // Clean up
     global.fetch = originalFetch;
     await db.delete(expenses).where(eq(expenses.sourceRef, "9001"));
-    await db.delete(splitwiseSyncState).where(eq(splitwiseSyncState.userId, testUserId));
+    await db.delete(splitwiseSyncState).where(eq(splitwiseSyncState.householdId, testHouseholdId));
     await db
       .update(users)
       .set({

@@ -93,7 +93,7 @@ export interface SyncResult {
   exchangeRate: number | null;
 }
 
-export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult> {
+export async function syncSplitwiseExpenses(userId: string, householdId: string): Promise<SyncResult> {
   // 1. Read user's Splitwise config
   const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user?.splitwiseAccessToken || !user?.splitwiseGroupId) {
@@ -104,7 +104,7 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
   const [syncState] = await db
     .select()
     .from(splitwiseSyncState)
-    .where(eq(splitwiseSyncState.userId, userId));
+    .where(eq(splitwiseSyncState.householdId, householdId));
 
   const cursor = syncState?.lastUpdatedAt?.toISOString() ?? null;
 
@@ -135,7 +135,7 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
           .from(expenses)
           .where(
             and(
-              eq(expenses.userId, userId),
+              eq(expenses.householdId, householdId),
               eq(expenses.source, "splitwise"),
               inArray(expenses.sourceRef, allSourceRefs),
             ),
@@ -177,7 +177,8 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
       }
     } else {
       toInsert.push({
-        userId,
+        householdId,
+        createdBy: userId,
         amount: String(p.amount),
         currency: p.currency,
         description: p.description,
@@ -211,7 +212,7 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
       .delete(expenses)
       .where(
         and(
-          eq(expenses.userId, userId),
+          eq(expenses.householdId, householdId),
           eq(expenses.source, "splitwise"),
           inArray(expenses.sourceRef, deletedIds),
         ),
@@ -233,10 +234,10 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
         lastSyncAt: new Date(),
         lastUpdatedAt: new Date(maxUpdatedAt),
       })
-      .where(eq(splitwiseSyncState.userId, userId));
+      .where(eq(splitwiseSyncState.householdId, householdId));
   } else {
     await db.insert(splitwiseSyncState).values({
-      userId,
+      householdId,
       lastSyncAt: new Date(),
       lastUpdatedAt: new Date(maxUpdatedAt),
     });
@@ -247,7 +248,7 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
   if (insertedRows.length > 0) {
     const ruleMatches = await applyRules(
       insertedRows.map((e) => ({ id: e.id, description: e.description })),
-      userId,
+      householdId,
     );
     const ruleCount = await applyCategorization(ruleMatches);
 
@@ -255,7 +256,7 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
       .filter((e) => !ruleMatches.has(e.id))
       .map((e) => ({ id: e.id, description: e.description, amount: Number(e.amount) }));
 
-    const aiResults = await categorizeBatch(uncategorized, userId);
+    const aiResults = await categorizeBatch(uncategorized, householdId);
     const aiMap = new Map(aiResults.map((r) => [r.expenseId, r.categoryId]));
     const aiCount = await applyCategorization(aiMap);
 

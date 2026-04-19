@@ -4,8 +4,8 @@ import { OAuth2Client } from "google-auth-library";
 import { eq } from "drizzle-orm";
 import { env } from "../config/env.js";
 import { db } from "../db/client.js";
-import { users } from "../db/schema.js";
-import { seedCategoriesForUser } from "../db/seed.js";
+import { users, households, householdMembers } from "../db/schema.js";
+import { seedCategoriesForHousehold } from "../db/seed.js";
 
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
 
@@ -40,7 +40,27 @@ authRoutes.post("/google", async (c) => {
         picture: payload.picture ?? null,
       })
       .returning();
-    await seedCategoriesForUser(user.id);
+
+    // Create a personal household for the new user
+    const [household] = await db
+      .insert(households)
+      .values({ name: "Personal" })
+      .returning();
+
+    // Add user as a member of the household
+    await db.insert(householdMembers).values({
+      householdId: household.id,
+      userId: user.id,
+    });
+
+    // Set the user's active household
+    [user] = await db
+      .update(users)
+      .set({ activeHouseholdId: household.id })
+      .where(eq(users.id, user.id))
+      .returning();
+
+    await seedCategoriesForHousehold(household.id);
   }
 
   const token = await sign(
@@ -49,6 +69,7 @@ authRoutes.post("/google", async (c) => {
       email: user.email,
       name: user.name,
       picture: user.picture,
+      householdId: user.activeHouseholdId,
       exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
     },
     env.JWT_SECRET,
@@ -56,6 +77,12 @@ authRoutes.post("/google", async (c) => {
 
   return c.json({
     token,
-    user: { id: user.id, email: user.email, name: user.name, picture: user.picture },
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      activeHouseholdId: user.activeHouseholdId,
+    },
   });
 });

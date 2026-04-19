@@ -67,14 +67,14 @@ export const CATEGORY_TREE = [
   },
 ];
 
-export async function seedCategoriesForUser(userId: string) {
+export async function seedCategoriesForHousehold(householdId: string) {
   for (let i = 0; i < CATEGORY_TREE.length; i++) {
     const parent = CATEGORY_TREE[i];
 
     const [inserted] = await db
       .insert(categories)
       .values({
-        userId,
+        householdId,
         name: parent.name,
         emoji: parent.emoji,
         sortOrder: i,
@@ -83,7 +83,7 @@ export async function seedCategoriesForUser(userId: string) {
 
     await db.insert(categories).values(
       parent.children.map((name, j) => ({
-        userId,
+        householdId,
         name,
         parentId: inserted.id,
         sortOrder: j,
@@ -94,13 +94,12 @@ export async function seedCategoriesForUser(userId: string) {
 
 async function seed() {
   console.log("Seeding categories...");
-  // CLI seed requires a userId argument
-  const userId = process.argv[2];
-  if (!userId) {
-    console.error("Usage: seed <userId>");
+  const householdId = process.argv[2];
+  if (!householdId) {
+    console.error("Usage: seed <householdId>");
     process.exit(1);
   }
-  await seedCategoriesForUser(userId);
+  await seedCategoriesForHousehold(householdId);
   console.log("Seed complete.");
   process.exit(0);
 }
