@@ -13,12 +13,12 @@ interface CategorizeResult {
 // Step 1: Match against existing rules
 export async function applyRules(
   expenseList: { id: string; description: string }[],
-  userId: string,
+  householdId: string,
 ): Promise<Map<string, string>> {
   const rules = await db
     .select()
     .from(categorizationRules)
-    .where(eq(categorizationRules.userId, userId));
+    .where(eq(categorizationRules.householdId, householdId));
   const matched = new Map<string, string>();
 
   for (const expense of expenseList) {
@@ -39,7 +39,7 @@ const BATCH_SIZE = 40;
 // Step 2: AI categorization for unmatched expenses
 export async function categorizeBatch(
   uncategorized: { id: string; description: string; amount: number }[],
-  userId: string,
+  householdId: string,
 ): Promise<CategorizeResult[]> {
   if (uncategorized.length === 0) {
     console.log("[categorizer] skipping: no expenses");
@@ -56,7 +56,7 @@ export async function categorizeBatch(
   const allCategories = await db
     .select()
     .from(categories)
-    .where(eq(categories.userId, userId));
+    .where(eq(categories.householdId, householdId));
   const parents = allCategories.filter((c) => !c.parentId && c.name !== "INGRESOS");
   const categoryList = parents
     .map((p) => {
