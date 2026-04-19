@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Routes, Route, NavLink, Navigate } from "react-router-dom";
-import { LayoutDashboard, Upload, Tags, FolderTree, LogOut, Home } from "lucide-react";
+import { LayoutDashboard, Upload, Tags, FolderTree, LogOut, Home, ChevronDown } from "lucide-react";
 import { useAuth } from "./lib/auth";
 import { getHouseholds, switchHousehold } from "./lib/api";
 import Dashboard from "./pages/Dashboard";
@@ -22,6 +22,7 @@ const NAV = [
 export default function App() {
   const { isAuthenticated, isLoading, user, logout, updateToken } = useAuth();
   const [households, setHouseholds] = useState<{ id: string; name: string }[]>([]);
+  const [showHouseholdMenu, setShowHouseholdMenu] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -62,18 +63,49 @@ export default function App() {
     <div className="flex h-screen">
       {/* Sidebar */}
       <nav className="w-56 bg-dark-card border-r border-dark-border flex flex-col p-4 gap-1">
-        <h1 className="text-xl font-bold text-white mb-6 px-3">FinBot</h1>
-        {households.length > 1 && (
-          <select
-            value={user?.activeHouseholdId ?? ""}
-            onChange={(e) => handleSwitch(e.target.value)}
-            className="w-full bg-dark-bg border border-dark-border rounded-lg px-3 py-1.5 text-sm text-white mb-4"
+        {/* Household picker */}
+        <div className="relative mb-4">
+          <button
+            onClick={() => setShowHouseholdMenu(!showHouseholdMenu)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-dark-hover transition-colors"
           >
-            {households.map((h) => (
-              <option key={h.id} value={h.id}>{h.name}</option>
-            ))}
-          </select>
-        )}
+            {user?.picture && (
+              <img
+                src={user.picture}
+                alt=""
+                className="w-6 h-6 rounded-full shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            )}
+            <span className="text-sm text-white font-medium truncate flex-1 text-left">
+              {households.find((h) => h.id === user?.activeHouseholdId)?.name ?? "FinBot"}
+            </span>
+            <ChevronDown size={14} className={`text-gray-500 shrink-0 transition-transform ${showHouseholdMenu ? "rotate-180" : ""}`} />
+          </button>
+          {showHouseholdMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowHouseholdMenu(false)} />
+              <div className="absolute left-0 right-0 top-full mt-1 bg-dark-bg border border-dark-border rounded-lg py-1 z-20 shadow-lg">
+                {households.map((h) => (
+                  <button
+                    key={h.id}
+                    onClick={() => {
+                      setShowHouseholdMenu(false);
+                      if (h.id !== user?.activeHouseholdId) handleSwitch(h.id);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                      h.id === user?.activeHouseholdId
+                        ? "text-white bg-dark-hover"
+                        : "text-gray-400 hover:bg-dark-hover hover:text-white"
+                    }`}
+                  >
+                    {h.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         {NAV.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -95,14 +127,6 @@ export default function App() {
         {/* User + Logout */}
         <div className="mt-auto pt-4 border-t border-dark-border">
           <div className="flex items-center gap-3 px-3 py-2">
-            {user?.picture && (
-              <img
-                src={user.picture}
-                alt=""
-                className="w-7 h-7 rounded-full"
-                referrerPolicy="no-referrer"
-              />
-            )}
             <span className="text-xs text-gray-400 truncate flex-1">{user?.name}</span>
             <button
               onClick={logout}
