@@ -178,6 +178,8 @@ export async function splitwiseCallbackHandler(c: import("hono").Context) {
   });
 
   if (!tokenRes.ok) {
+    const errBody = await tokenRes.text().catch(() => "no body");
+    console.error("Splitwise token exchange failed:", tokenRes.status, errBody);
     return c.json({ error: "Failed to exchange code for token" }, 500);
   }
 
