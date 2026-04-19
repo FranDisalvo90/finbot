@@ -6,6 +6,7 @@ interface User {
   email: string;
   name: string;
   picture: string | null;
+  activeHouseholdId: string | null;
 }
 
 interface AuthContextType {
@@ -15,6 +16,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (credential: string) => Promise<void>;
   logout: () => void;
+  updateToken: (token: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType>(null!);
@@ -54,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: payload.email as string,
         name: payload.name as string,
         picture: (payload.picture as string) ?? null,
+        activeHouseholdId: (payload.householdId as string) ?? null,
       });
     }
 
@@ -87,8 +90,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const updateToken = useCallback((newToken: string) => {
+    localStorage.setItem("auth_token", newToken);
+    setToken(newToken);
+    const payload = decodeJwtPayload(newToken);
+    setUser({
+      id: payload.sub as string,
+      email: payload.email as string,
+      name: payload.name as string,
+      picture: (payload.picture as string) ?? null,
+      activeHouseholdId: (payload.householdId as string) ?? null,
+    });
+  }, []);
+
   const content = (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: !!token, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated: !!token, isLoading, login, logout, updateToken }}>
       {children}
     </AuthContext.Provider>
   );

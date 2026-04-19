@@ -103,3 +103,66 @@ export async function connectSplitwise(): Promise<void> {
   const data = await api<{ url: string }>("/splitwise/connect");
   window.location.href = data.url;
 }
+
+// Household API
+
+export interface Household {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface HouseholdMember {
+  id: string;
+  name: string;
+  email: string;
+  picture: string | null;
+}
+
+export function getHouseholds(): Promise<Household[]> {
+  return api<Household[]>("/households");
+}
+
+export function createHousehold(name: string): Promise<Household & { token: string }> {
+  return api<Household & { token: string }>("/households", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function updateHouseholdName(id: string, name: string): Promise<Household> {
+  return api<Household>(`/households/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function switchHousehold(householdId: string): Promise<{ token: string }> {
+  return api<{ token: string }>("/households/switch", {
+    method: "POST",
+    body: JSON.stringify({ householdId }),
+  });
+}
+
+export function getHouseholdMembers(id: string): Promise<HouseholdMember[]> {
+  return api<HouseholdMember[]>(`/households/${id}/members`);
+}
+
+export function createInvite(id: string): Promise<{ code: string; expiresAt: string }> {
+  return api<{ code: string; expiresAt: string }>(`/households/${id}/invite`, {
+    method: "POST",
+  });
+}
+
+export function joinHousehold(code: string): Promise<{ household: Household; token: string }> {
+  return api<{ household: Household; token: string }>("/households/join", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function leaveHousehold(id: string): Promise<{ ok: boolean; token?: string }> {
+  return api<{ ok: boolean; token?: string }>(`/households/${id}/leave`, {
+    method: "POST",
+  });
+}
