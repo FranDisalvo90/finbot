@@ -8,13 +8,60 @@ import {
   boolean,
   jsonb,
   date,
+  unique,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
+export const households = pgTable("households", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const householdMembers = pgTable("household_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: uuid("household_id")
+    .references(() => households.id)
+    .notNull(),
+  userId: uuid("user_id")
+    .references(() => users.id)
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  unique("household_members_household_user").on(table.householdId, table.userId),
+]);
+
+export const householdInvites = pgTable("household_invites", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: uuid("household_id")
+    .references(() => households.id)
+    .notNull(),
+  code: text("code").notNull().unique(),
+  createdBy: uuid("created_by")
+    .references(() => users.id)
+    .notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  googleId: text("google_id").notNull().unique(),
+  email: text("email").notNull().unique(),
+  name: text("name").notNull(),
+  picture: text("picture"),
+  splitwiseAccessToken: text("splitwise_access_token"),
+  splitwiseUserId: integer("splitwise_user_id"),
+  splitwiseGroupId: integer("splitwise_group_id"),
+  splitwiseGroupName: text("splitwise_group_name"),
+  activeHouseholdId: uuid("active_household_id").references(() => households.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const categories = pgTable("categories", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").references(() => users.id),
+  householdId: uuid("household_id").references(() => households.id),
   name: text("name").notNull(),
   emoji: text("emoji"),
   parentId: uuid("parent_id").references((): AnyPgColumn => categories.id),
@@ -35,7 +82,8 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
 
 export const expenses = pgTable("expenses", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").references(() => users.id),
+  householdId: uuid("household_id").references(() => households.id),
+  createdBy: uuid("created_by").references(() => users.id),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   currency: text("currency").default("ARS").notNull(),
   description: text("description").notNull(),
@@ -63,7 +111,7 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
 
 export const categorizationRules = pgTable("categorization_rules", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").references(() => users.id),
+  householdId: uuid("household_id").references(() => households.id),
   pattern: text("pattern").notNull(),
   categoryId: uuid("category_id")
     .references(() => categories.id)
@@ -79,22 +127,9 @@ export const categorizationRulesRelations = relations(categorizationRules, ({ on
   }),
 }));
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  googleId: text("google_id").notNull().unique(),
-  email: text("email").notNull().unique(),
-  name: text("name").notNull(),
-  picture: text("picture"),
-  splitwiseAccessToken: text("splitwise_access_token"),
-  splitwiseUserId: integer("splitwise_user_id"),
-  splitwiseGroupId: integer("splitwise_group_id"),
-  splitwiseGroupName: text("splitwise_group_name"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const imports = pgTable("imports", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").references(() => users.id),
+  householdId: uuid("household_id").references(() => households.id),
   fileName: text("file_name"),
   source: text("source").notNull(), // 'splitwise' | 'visa_galicia'
   month: text("month"),
@@ -104,8 +139,8 @@ export const imports = pgTable("imports", {
 
 export const splitwiseSyncState = pgTable("splitwise_sync_state", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .references(() => users.id)
+  householdId: uuid("household_id")
+    .references(() => households.id)
     .notNull()
     .unique(),
   lastSyncAt: timestamp("last_sync_at"),
