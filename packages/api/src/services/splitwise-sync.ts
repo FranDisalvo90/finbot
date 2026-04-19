@@ -3,6 +3,7 @@ import { expenses, users, splitwiseSyncState } from "../db/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { splitwiseFetch } from "./splitwise-client.js";
 import { fetchBlueRate } from "./exchange-rate.js";
+import { computeDualAmounts } from "./currency.js";
 import { applyRules, categorizeBatch, applyCategorization } from "./categorizer.js";
 import type { ParsedExpense } from "./parsers/visa-galicia.js";
 
@@ -144,21 +145,12 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
   const existingByRef = new Map(existingExpenses.map((e) => [e.sourceRef, e]));
 
   // 7. Insert new, update changed
-  let inserted = 0;
-  let updated = 0;
+  const toInsert: (typeof expenses.$inferInsert)[] = [];
+  const updatePromises: Promise<unknown>[] = [];
 
   for (const p of parsed) {
     const existing = existingByRef.get(p.sourceRef!);
-    const amountArs = rate
-      ? p.currency === "ARS"
-        ? String(p.amount)
-        : String(+(p.amount * rate).toFixed(2))
-      : "0";
-    const amountUsd = rate
-      ? p.currency === "USD"
-        ? String(p.amount)
-        : String(+(p.amount / rate).toFixed(2))
-      : "0";
+    const { amountArs, amountUsd } = computeDualAmounts(p.amount, p.currency, rate);
 
     if (existing) {
       if (
@@ -166,24 +158,25 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
         existing.description !== p.description ||
         existing.date !== p.date
       ) {
-        await db
-          .update(expenses)
-          .set({
-            amount: String(p.amount),
-            description: p.description,
-            date: p.date,
-            month: p.date.substring(0, 7),
-            currency: p.currency,
-            amountArs,
-            amountUsd,
-            exchangeRate: rate ? String(rate) : null,
-            rawData: { raw: p.rawLine },
-          })
-          .where(eq(expenses.id, existing.id));
-        updated++;
+        updatePromises.push(
+          db
+            .update(expenses)
+            .set({
+              amount: String(p.amount),
+              description: p.description,
+              date: p.date,
+              month: p.date.substring(0, 7),
+              currency: p.currency,
+              amountArs,
+              amountUsd,
+              exchangeRate: rate ? String(rate) : null,
+              rawData: { raw: p.rawLine },
+            })
+            .where(eq(expenses.id, existing.id)),
+        );
       }
     } else {
-      await db.insert(expenses).values({
+      toInsert.push({
         userId,
         amount: String(p.amount),
         currency: p.currency,
@@ -199,9 +192,17 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
         exchangeRate: rate ? String(rate) : null,
         rawData: { raw: p.rawLine },
       });
-      inserted++;
     }
   }
+
+  const insertedRows =
+    toInsert.length > 0
+      ? await db.insert(expenses).values(toInsert).returning()
+      : [];
+  await Promise.all(updatePromises);
+
+  const inserted = insertedRows.length;
+  const updated = updatePromises.length;
 
   // 8. Handle deletions
   let deletedCount = 0;
@@ -243,30 +244,14 @@ export async function syncSplitwiseExpenses(userId: string): Promise<SyncResult>
 
   // 10. Categorize newly inserted expenses
   let categorized = 0;
-  if (inserted > 0) {
-    const newExpenses = await db
-      .select()
-      .from(expenses)
-      .where(
-        and(
-          eq(expenses.userId, userId),
-          eq(expenses.source, "splitwise"),
-          inArray(
-            expenses.sourceRef,
-            parsed
-              .filter((p) => !existingByRef.has(p.sourceRef!))
-              .map((p) => p.sourceRef!),
-          ),
-        ),
-      );
-
+  if (insertedRows.length > 0) {
     const ruleMatches = await applyRules(
-      newExpenses.map((e) => ({ id: e.id, description: e.description })),
+      insertedRows.map((e) => ({ id: e.id, description: e.description })),
       userId,
     );
     const ruleCount = await applyCategorization(ruleMatches);
 
-    const uncategorized = newExpenses
+    const uncategorized = insertedRows
       .filter((e) => !ruleMatches.has(e.id))
       .map((e) => ({ id: e.id, description: e.description, amount: Number(e.amount) }));
 

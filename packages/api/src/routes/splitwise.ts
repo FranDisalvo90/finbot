@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { db } from "../db/client.js";
 import { users, splitwiseSyncState } from "../db/schema.js";
 import { eq } from "drizzle-orm";
@@ -150,7 +151,7 @@ splitwiseRoutes.post("/disconnect", async (c) => {
 });
 
 // Standalone callback handler (registered as public route in app.ts)
-export async function splitwiseCallbackHandler(c: import("hono").Context) {
+export async function splitwiseCallbackHandler(c: Context) {
   const code = c.req.query("code");
   const state = c.req.query("state");
 

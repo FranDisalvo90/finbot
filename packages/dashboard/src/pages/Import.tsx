@@ -84,21 +84,16 @@ export default function Import() {
   const [swLoading, setSwLoading] = useState(true);
   const [swShowGroupSelect, setSwShowGroupSelect] = useState(false);
 
-  // Load Splitwise status on mount
-  useEffect(() => {
-    getSplitwiseStatus()
-      .then(setSwStatus)
-      .catch(() => setSwStatus({ connected: false, groupId: null, groupName: null, lastSyncAt: null }))
-      .finally(() => setSwLoading(false));
-  }, []);
-
-  // Handle ?splitwise=connected from OAuth callback
+  // Load Splitwise status on mount + handle OAuth callback redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("splitwise") === "connected") {
       window.history.replaceState({}, "", "/import");
-      getSplitwiseStatus().then(setSwStatus);
     }
+    getSplitwiseStatus()
+      .then(setSwStatus)
+      .catch(() => setSwStatus({ connected: false, groupId: null, groupName: null, lastSyncAt: null }))
+      .finally(() => setSwLoading(false));
   }, []);
 
   const handleSwConnect = async () => {

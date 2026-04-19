@@ -8,6 +8,7 @@ import { applyRules, categorizeBatch, applyCategorization } from "../services/ca
 import type { ParsedExpense } from "../services/parsers/visa-galicia.js";
 import { getUserId } from "../middleware/get-user.js";
 import { fetchBlueRate } from "../services/exchange-rate.js";
+import { computeDualAmounts } from "../services/currency.js";
 
 export const importRoutes = new Hono();
 
@@ -136,16 +137,7 @@ importRoutes.post("/confirm", async (c) => {
   // Insert expenses with dual currency amounts
   const rate = exchangeRate ? Number(exchangeRate) : null;
   const toInsert = filtered.map(({ expense: e }) => {
-    const amountArs = rate
-      ? e.currency === "ARS"
-        ? String(e.amount)
-        : String(+(e.amount * rate).toFixed(2))
-      : "0";
-    const amountUsd = rate
-      ? e.currency === "USD"
-        ? String(e.amount)
-        : String(+(e.amount / rate).toFixed(2))
-      : "0";
+    const { amountArs, amountUsd } = computeDualAmounts(e.amount, e.currency, rate);
     return {
       userId,
       amount: String(e.amount),
