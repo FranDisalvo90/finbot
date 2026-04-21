@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { db } from "../db/client.js";
-import { users, splitwiseSyncState } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { users, splitwiseSyncState, householdMembers } from "../db/schema.js";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { env } from "../config/env.js";
 import { getUserId, getHouseholdId } from "../middleware/get-user.js";
 import { splitwiseFetch, SplitwiseAuthError } from "../services/splitwise-client.js";
@@ -12,6 +12,22 @@ export const splitwiseRoutes = new Hono();
 
 // In-memory CSRF state store: state -> { userId, createdAt }
 const oauthStates = new Map<string, { userId: string; createdAt: number }>();
+
+// Find any household member with a Splitwise connection
+async function findSplitwiseUser(householdId: string) {
+  const [row] = await db
+    .select({ user: users })
+    .from(householdMembers)
+    .innerJoin(users, eq(householdMembers.userId, users.id))
+    .where(
+      and(
+        eq(householdMembers.householdId, householdId),
+        isNotNull(users.splitwiseAccessToken),
+      ),
+    )
+    .limit(1);
+  return row?.user ?? null;
+}
 
 // Clean expired states (older than 10 minutes)
 function cleanExpiredStates() {
@@ -23,13 +39,12 @@ function cleanExpiredStates() {
   }
 }
 
-// GET /status — connection status
+// GET /status — connection status (household-level)
 splitwiseRoutes.get("/status", async (c) => {
-  const userId = getUserId(c);
   const householdId = getHouseholdId(c);
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  const swUser = await findSplitwiseUser(householdId);
 
-  const connected = !!user?.splitwiseAccessToken;
+  const connected = !!swUser;
   let lastSyncAt: string | null = null;
 
   if (connected) {
@@ -42,8 +57,8 @@ splitwiseRoutes.get("/status", async (c) => {
 
   return c.json({
     connected,
-    groupId: user?.splitwiseGroupId ?? null,
-    groupName: user?.splitwiseGroupName ?? null,
+    groupId: swUser?.splitwiseGroupId ?? null,
+    groupName: swUser?.splitwiseGroupName ?? null,
     lastSyncAt,
   });
 });
@@ -66,18 +81,18 @@ splitwiseRoutes.get("/connect", (c) => {
   return c.json({ url: `https://secure.splitwise.com/oauth/authorize?${params.toString()}` });
 });
 
-// GET /groups — list user's Splitwise groups
+// GET /groups — list Splitwise groups (uses any connected member's token)
 splitwiseRoutes.get("/groups", async (c) => {
-  const userId = getUserId(c);
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  const householdId = getHouseholdId(c);
+  const swUser = await findSplitwiseUser(householdId);
 
-  if (!user?.splitwiseAccessToken) {
+  if (!swUser) {
     return c.json({ error: "Splitwise not connected" }, 400);
   }
 
   const data = await splitwiseFetch<{
     groups: { id: number; name: string; members: { id: number }[] }[];
-  }>("/get_groups", user.splitwiseAccessToken);
+  }>("/get_groups", swUser.splitwiseAccessToken!);
 
   const groups = data.groups
     .filter((g) => g.id !== 0)
@@ -86,9 +101,8 @@ splitwiseRoutes.get("/groups", async (c) => {
   return c.json({ groups });
 });
 
-// POST /group — select active group
+// POST /group — select active group (updates the connected member)
 splitwiseRoutes.post("/group", async (c) => {
-  const userId = getUserId(c);
   const householdId = getHouseholdId(c);
   const { groupId, groupName } = await c.req.json();
 
@@ -96,15 +110,15 @@ splitwiseRoutes.post("/group", async (c) => {
     return c.json({ error: "groupId (number) and groupName (string) required" }, 400);
   }
 
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
-  if (!user?.splitwiseAccessToken) {
+  const swUser = await findSplitwiseUser(householdId);
+  if (!swUser) {
     return c.json({ error: "Splitwise not connected" }, 400);
   }
 
   await db
     .update(users)
     .set({ splitwiseGroupId: groupId, splitwiseGroupName: groupName })
-    .where(eq(users.id, userId));
+    .where(eq(users.id, swUser.id));
 
   // Reset sync state so the new group does a full sync
   await db.delete(splitwiseSyncState).where(eq(splitwiseSyncState.householdId, householdId));
@@ -112,44 +126,46 @@ splitwiseRoutes.post("/group", async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /sync — trigger incremental sync
+// POST /sync — trigger incremental sync (uses any connected member's token)
 splitwiseRoutes.post("/sync", async (c) => {
-  const userId = getUserId(c);
   const householdId = getHouseholdId(c);
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  const swUser = await findSplitwiseUser(householdId);
 
-  if (!user?.splitwiseAccessToken || !user?.splitwiseGroupId) {
+  if (!swUser?.splitwiseAccessToken || !swUser?.splitwiseGroupId) {
     return c.json({ error: "Splitwise not connected or no group selected" }, 400);
   }
 
   try {
-    const result = await syncSplitwiseExpenses(userId, householdId);
+    const result = await syncSplitwiseExpenses(swUser.id, householdId);
     return c.json(result);
   } catch (e) {
     if (e instanceof SplitwiseAuthError) {
       await db
         .update(users)
         .set({ splitwiseAccessToken: null, splitwiseUserId: null })
-        .where(eq(users.id, userId));
+        .where(eq(users.id, swUser.id));
       return c.json({ error: "splitwise_auth_expired" }, 401);
     }
     throw e;
   }
 });
 
-// POST /disconnect — clear Splitwise connection
+// POST /disconnect — clear Splitwise connection (disconnects the connected member)
 splitwiseRoutes.post("/disconnect", async (c) => {
-  const userId = getUserId(c);
   const householdId = getHouseholdId(c);
-  await db
-    .update(users)
-    .set({
-      splitwiseAccessToken: null,
-      splitwiseUserId: null,
-      splitwiseGroupId: null,
-      splitwiseGroupName: null,
-    })
-    .where(eq(users.id, userId));
+  const swUser = await findSplitwiseUser(householdId);
+
+  if (swUser) {
+    await db
+      .update(users)
+      .set({
+        splitwiseAccessToken: null,
+        splitwiseUserId: null,
+        splitwiseGroupId: null,
+        splitwiseGroupName: null,
+      })
+      .where(eq(users.id, swUser.id));
+  }
   await db.delete(splitwiseSyncState).where(eq(splitwiseSyncState.householdId, householdId));
   return c.json({ ok: true });
 });
