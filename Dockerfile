@@ -1,4 +1,4 @@
-FROM node:22-slim AS base
+FROM node:24-slim AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -20,7 +20,7 @@ RUN pnpm --filter dashboard build
 RUN pnpm --filter api build
 
 # Production stage
-FROM node:22-slim AS production
+FROM node:24-slim AS production
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
