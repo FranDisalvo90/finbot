@@ -1,5 +1,5 @@
 FROM node:22-slim AS base
-RUN corepack enable && corepack prepare pnpm@11.1.2 --activate
+RUN npm install -g pnpm@11.1.2
 WORKDIR /app
 
 # Install dependencies
@@ -21,7 +21,7 @@ RUN pnpm --filter api build
 
 # Production stage
 FROM node:22-slim AS production
-RUN corepack enable && corepack prepare pnpm@11.1.2 --activate
+RUN npm install -g pnpm@11.1.2
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
