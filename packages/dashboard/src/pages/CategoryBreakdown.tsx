@@ -8,6 +8,11 @@ interface ChildBreakdown {
   name: string;
   totalArs: number;
   totalUsd: number;
+  prevArs: number | null;
+  prevUsd: number | null;
+  deltaArs: number | null;
+  deltaUsd: number | null;
+  deltaPct: number | null;
 }
 
 interface ParentBreakdown {
@@ -16,6 +21,11 @@ interface ParentBreakdown {
   emoji: string | null;
   totalArs: number;
   totalUsd: number;
+  prevArs: number | null;
+  prevUsd: number | null;
+  deltaArs: number | null;
+  deltaUsd: number | null;
+  deltaPct: number | null;
   children: ChildBreakdown[];
 }
 
@@ -55,6 +65,21 @@ export default function CategoryBreakdown() {
   const fmt = currency === "ARS" ? formatARS : formatUSD;
   const pickTotal = (r: { totalArs: number; totalUsd: number }) =>
     currency === "ARS" ? r.totalArs : r.totalUsd;
+
+  const pickDelta = (r: { deltaArs: number | null; deltaUsd: number | null }) =>
+    currency === "ARS" ? r.deltaArs : r.deltaUsd;
+
+  function DeltaBadge({ delta, pct }: { delta: number | null; pct: number | null }) {
+    if (delta === null) return null;
+    const isUp = delta > 0;
+    const color = isUp ? "text-red-400" : "text-green-400";
+    const sign = isUp ? "+" : "";
+    return (
+      <span className={`text-xs ${color} whitespace-nowrap`}>
+        {sign}{fmt(delta)} ({pct !== null ? `${sign}${pct.toFixed(1)}%` : "—"})
+      </span>
+    );
+  }
 
   const setMonth = (m: string) => setSearchParams({ month: m });
 
@@ -126,7 +151,25 @@ export default function CategoryBreakdown() {
       {/* Title + Grand Total */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-white">Desglose por categoría</h3>
-        {!loading && <span className="text-lg font-semibold text-white">{fmt(grandTotal)}</span>}
+        {!loading && (
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-semibold text-white">{fmt(grandTotal)}</span>
+            {(() => {
+              const totalDelta = data.reduce((s, p) => {
+                const d = pickDelta(p);
+                return d !== null ? s + d : s;
+              }, 0);
+              const totalPrev = data.reduce((s, p) => {
+                const prev = currency === "ARS" ? p.prevArs : p.prevUsd;
+                return prev !== null ? s + prev : s;
+              }, 0);
+              const hasDelta = data.some((p) => pickDelta(p) !== null);
+              if (!hasDelta) return null;
+              const pct = totalPrev > 0 ? (totalDelta / totalPrev) * 100 : null;
+              return <DeltaBadge delta={totalDelta} pct={pct} />;
+            })()}
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -161,6 +204,7 @@ export default function CategoryBreakdown() {
                     </span>
                   )}
                   <span className="font-mono text-white font-medium">{fmt(parentTotal)}</span>
+                  <DeltaBadge delta={pickDelta(parent)} pct={parent.deltaPct} />
                 </button>
 
                 {/* Children */}
@@ -187,6 +231,7 @@ export default function CategoryBreakdown() {
                           <span className="font-mono text-sm text-gray-200 w-28 text-right">
                             {fmt(childTotal)}
                           </span>
+                          <DeltaBadge delta={pickDelta(child)} pct={child.deltaPct} />
                         </div>
                       );
                     })}
