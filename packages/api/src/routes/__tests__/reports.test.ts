@@ -113,6 +113,103 @@ describe("GET /api/reports/trend", () => {
   });
 });
 
+describe("GET /api/reports/breakdown — deltas", () => {
+  async function seedTwoMonths() {
+    // Feb: category-less expenses
+    await createExpense({
+      amount: 800,
+      currency: "ARS",
+      description: "Feb expense A",
+      date: "2026-02-05",
+      exchangeRate: 1200,
+    });
+    await createExpense({
+      amount: 200,
+      currency: "ARS",
+      description: "Feb expense B",
+      date: "2026-02-15",
+      exchangeRate: 1200,
+    });
+    // Mar: category-less expenses (different totals to get meaningful deltas)
+    await createExpense({
+      amount: 1000,
+      currency: "ARS",
+      description: "Mar expense A",
+      date: "2026-03-01",
+      exchangeRate: 1200,
+    });
+    await createExpense({
+      amount: 500,
+      currency: "ARS",
+      description: "Mar expense B",
+      date: "2026-03-10",
+      exchangeRate: 1200,
+    });
+  }
+
+  it("includes delta fields comparing to previous month by default", async () => {
+    await seedTwoMonths();
+    const res = await app.request("/api/reports/breakdown?month=2026-03", { headers: auth });
+    const body = await json(res);
+
+    expect(res.status).toBe(200);
+    // At least one category should have delta fields
+    const withDelta = body.find((c: any) => c.deltaArs !== null);
+    expect(withDelta).toBeDefined();
+    expect(withDelta).toHaveProperty("prevArs");
+    expect(withDelta).toHaveProperty("deltaArs");
+    expect(withDelta).toHaveProperty("deltaPct");
+  });
+
+  it("respects explicit compareTo param", async () => {
+    await seedTwoMonths();
+    const res = await app.request("/api/reports/breakdown?month=2026-03&compareTo=2026-02", {
+      headers: auth,
+    });
+    const body = await json(res);
+
+    expect(res.status).toBe(200);
+    const withDelta = body.find((c: any) => c.deltaArs !== null);
+    expect(withDelta).toBeDefined();
+  });
+
+  it("returns null deltas when no previous month data", async () => {
+    // Seed only January (nothing in December)
+    await createExpense({
+      amount: 300,
+      currency: "ARS",
+      description: "Jan only",
+      date: "2026-01-15",
+      exchangeRate: 1200,
+    });
+    const res = await app.request("/api/reports/breakdown?month=2026-01", { headers: auth });
+    const body = await json(res);
+
+    expect(res.status).toBe(200);
+    for (const cat of body) {
+      expect(cat.deltaArs).toBeNull();
+      expect(cat.deltaPct).toBeNull();
+      expect(cat.prevArs).toBeNull();
+    }
+  });
+
+  it("computes correct delta values", async () => {
+    await seedTwoMonths();
+    const res = await app.request("/api/reports/breakdown?month=2026-03", { headers: auth });
+    const body = await json(res);
+
+    // Check the math is internally consistent
+    for (const cat of body) {
+      if (cat.deltaArs !== null && cat.prevArs !== null) {
+        expect(cat.deltaArs).toBeCloseTo(cat.totalArs - cat.prevArs, 2);
+        if (cat.prevArs > 0) {
+          expect(cat.deltaPct).toBeCloseTo(((cat.totalArs - cat.prevArs) / cat.prevArs) * 100, 1);
+        }
+      }
+    }
+  });
+});
+
 describe("GET /api/reports/exchange-rate", () => {
   it("returns a rate from the API", async () => {
     // Mock global fetch for the external API call
