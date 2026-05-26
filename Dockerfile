@@ -3,7 +3,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
 # Install dependencies
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/api/package.json packages/api/
 COPY packages/dashboard/package.json packages/dashboard/
 RUN pnpm install --frozen-lockfile
@@ -24,7 +24,7 @@ FROM node:22-slim AS production
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY packages/api/package.json packages/api/
 COPY packages/dashboard/package.json packages/dashboard/
 
