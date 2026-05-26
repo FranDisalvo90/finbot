@@ -154,7 +154,7 @@ describe("GET /api/reports/breakdown — deltas", () => {
 
     expect(res.status).toBe(200);
     // At least one category should have delta fields
-    const withDelta = body.find((c: any) => c.deltaArs !== null);
+    const withDelta = body.find((c: { deltaArs: number | null }) => c.deltaArs !== null);
     expect(withDelta).toBeDefined();
     expect(withDelta).toHaveProperty("prevArs");
     expect(withDelta).toHaveProperty("deltaArs");
@@ -169,7 +169,7 @@ describe("GET /api/reports/breakdown — deltas", () => {
     const body = await json(res);
 
     expect(res.status).toBe(200);
-    const withDelta = body.find((c: any) => c.deltaArs !== null);
+    const withDelta = body.find((c: { deltaArs: number | null }) => c.deltaArs !== null);
     expect(withDelta).toBeDefined();
   });
 

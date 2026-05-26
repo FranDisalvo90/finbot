@@ -124,13 +124,23 @@ reportsRoutes.get("/trend", async (c) => {
   return c.json(result.reverse());
 });
 
-// GET /breakdown?month=2026-03
-reportsRoutes.get("/breakdown", async (c) => {
-  const householdId = getHouseholdId(c);
-  const month = c.req.query("month");
-  if (!month) return c.json({ error: "month query param required" }, 400);
+interface BreakdownChild {
+  id: string;
+  name: string;
+  totalArs: number;
+  totalUsd: number;
+}
 
-  // Get all expenses for the month with their category (expenses only, no income)
+interface BreakdownParent {
+  id: string;
+  name: string;
+  emoji: string | null;
+  totalArs: number;
+  totalUsd: number;
+  children: BreakdownChild[];
+}
+
+async function aggregateBreakdown(month: string, householdId: string): Promise<BreakdownParent[]> {
   const rows = await db
     .select({
       expense: expenses,
@@ -140,7 +150,6 @@ reportsRoutes.get("/breakdown", async (c) => {
     .leftJoin(categories, eq(expenses.categoryId, categories.id))
     .where(and(eq(expenses.month, month), eq(expenses.type, "expense"), eq(expenses.householdId, householdId)));
 
-  // Get all parent categories (for name/emoji resolution)
   const allParents = await db
     .select()
     .from(categories)
@@ -148,7 +157,6 @@ reportsRoutes.get("/breakdown", async (c) => {
 
   const parentMap = new Map(allParents.map((p) => [p.id, p]));
 
-  // Build: parentId -> { childId -> totals }
   const breakdown = new Map<
     string,
     {
@@ -166,7 +174,6 @@ reportsRoutes.get("/breakdown", async (c) => {
     const ars = Number(r.expense.amountArs);
     const usd = Number(r.expense.amountUsd);
 
-    // Determine parent and child
     let parentId: string;
     let childId: string | null = null;
     let childName: string | null = null;
@@ -207,8 +214,7 @@ reportsRoutes.get("/breakdown", async (c) => {
     }
   }
 
-  // Convert to array, sort parents and children by total desc
-  const result = [...breakdown.values()]
+  return [...breakdown.values()]
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -218,6 +224,66 @@ reportsRoutes.get("/breakdown", async (c) => {
       children: [...p.children.values()].sort((a, b) => b.totalArs - a.totalArs),
     }))
     .sort((a, b) => b.totalArs - a.totalArs);
+}
+
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// GET /breakdown?month=2026-03&compareTo=2026-02 (compareTo defaults to previous month)
+reportsRoutes.get("/breakdown", async (c) => {
+  const householdId = getHouseholdId(c);
+  const month = c.req.query("month");
+  if (!month) return c.json({ error: "month query param required" }, 400);
+
+  const compareTo = c.req.query("compareTo") ?? shiftMonth(month, -1);
+
+  const [current, previous] = await Promise.all([
+    aggregateBreakdown(month, householdId),
+    aggregateBreakdown(compareTo, householdId),
+  ]);
+
+  const prevParentMap = new Map(previous.map((p) => [p.id, p]));
+  const prevChildMap = new Map<string, BreakdownChild>();
+  for (const p of previous) {
+    for (const ch of p.children) {
+      prevChildMap.set(ch.id, ch);
+    }
+  }
+
+  const result = current.map((parent) => {
+    const prev = prevParentMap.get(parent.id);
+    const prevArs = prev?.totalArs ?? null;
+    const prevUsd = prev?.totalUsd ?? null;
+
+    return {
+      ...parent,
+      prevArs,
+      prevUsd,
+      deltaArs: prevArs !== null ? parent.totalArs - prevArs : null,
+      deltaUsd: prevUsd !== null ? parent.totalUsd - prevUsd : null,
+      deltaPct: prevArs !== null && prevArs > 0 ? ((parent.totalArs - prevArs) / prevArs) * 100 : null,
+      children: parent.children.map((child) => {
+        const prevChild = prevChildMap.get(child.id);
+        const childPrevArs = prevChild?.totalArs ?? null;
+        const childPrevUsd = prevChild?.totalUsd ?? null;
+
+        return {
+          ...child,
+          prevArs: childPrevArs,
+          prevUsd: childPrevUsd,
+          deltaArs: childPrevArs !== null ? child.totalArs - childPrevArs : null,
+          deltaUsd: childPrevUsd !== null ? child.totalUsd - childPrevUsd : null,
+          deltaPct:
+            childPrevArs !== null && childPrevArs > 0
+              ? ((child.totalArs - childPrevArs) / childPrevArs) * 100
+              : null,
+        };
+      }),
+    };
+  });
 
   return c.json(result);
 });
