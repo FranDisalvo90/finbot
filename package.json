@@ -18,6 +18,13 @@
     "test": "pnpm -r test",
     "test:api": "pnpm --filter api test"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@esbuild/*",
+      "esbuild-*"
+    ]
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.0.3",
