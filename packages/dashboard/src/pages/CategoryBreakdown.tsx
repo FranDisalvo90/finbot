@@ -69,13 +69,13 @@ export default function CategoryBreakdown() {
   const pickDelta = (r: { deltaArs: number | null; deltaUsd: number | null }) =>
     currency === "ARS" ? r.deltaArs : r.deltaUsd;
 
-  function DeltaBadge({ delta, pct }: { delta: number | null; pct: number | null }) {
-    if (delta === null) return null;
+  function DeltaBadge({ delta, pct, className = "" }: { delta: number | null; pct: number | null; className?: string }) {
+    if (delta === null) return <span className={className} />;
     const isUp = delta > 0;
     const color = isUp ? "text-red-400" : "text-green-400";
     const sign = isUp ? "+" : "";
     return (
-      <span className={`text-xs ${color} whitespace-nowrap`}>
+      <span className={`text-xs ${color} whitespace-nowrap text-right ${className}`}>
         {sign}{fmt(delta)} ({pct !== null ? `${sign}${pct.toFixed(1)}%` : "—"})
       </span>
     );
@@ -199,12 +199,12 @@ export default function CategoryBreakdown() {
                   <span className="text-lg">{parent.emoji}</span>
                   <span className="font-medium text-white flex-1 text-left">{parent.name}</span>
                   {grandTotal > 0 && (
-                    <span className="text-xs text-gray-500 mr-2">
+                    <span className="text-xs text-gray-500 w-14 text-right">
                       {((parentTotal / grandTotal) * 100).toFixed(1)}%
                     </span>
                   )}
-                  <span className="font-mono text-white font-medium">{fmt(parentTotal)}</span>
-                  <DeltaBadge delta={pickDelta(parent)} pct={parent.deltaPct} />
+                  <span className="font-mono text-white font-medium w-36 text-right">{fmt(parentTotal)}</span>
+                  <DeltaBadge delta={pickDelta(parent)} pct={parent.deltaPct} className="w-48" />
                 </button>
 
                 {/* Children */}
@@ -219,19 +219,19 @@ export default function CategoryBreakdown() {
                           className="flex items-center gap-3 pl-12 pr-3 py-2.5 hover:bg-dark-hover border-b border-dark-border last:border-0"
                         >
                           <span className="text-sm text-gray-300 flex-1">{child.name}</span>
-                          <div className="w-24 h-1.5 bg-dark-border rounded-full overflow-hidden mr-2">
+                          <div className="w-32 h-1.5 bg-dark-border rounded-full overflow-hidden">
                             <div
                               className="h-full bg-blue-500 rounded-full"
                               style={{ width: `${Math.min(pct, 100)}%` }}
                             />
                           </div>
-                          <span className="text-xs text-gray-500 w-12 text-right">
+                          <span className="text-xs text-gray-500 w-14 text-right">
                             {pct.toFixed(1)}%
                           </span>
-                          <span className="font-mono text-sm text-gray-200 w-28 text-right">
+                          <span className="font-mono text-sm text-gray-200 w-36 text-right">
                             {fmt(childTotal)}
                           </span>
-                          <DeltaBadge delta={pickDelta(child)} pct={child.deltaPct} />
+                          <DeltaBadge delta={pickDelta(child)} pct={child.deltaPct} className="w-48" />
                         </div>
                       );
                     })}
