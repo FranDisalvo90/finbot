@@ -62,7 +62,7 @@ export async function authHeader(): Promise<Record<string, string>> {
       householdId,
       exp: Math.floor(Date.now() / 1000) + 3600,
     },
-    process.env.JWT_SECRET ?? "test-secret",
+    process.env.JWT_SECRET ?? "test-secret-do-not-use-in-prod-0123456789",
   );
   return { Authorization: `Bearer ${token}` };
 }

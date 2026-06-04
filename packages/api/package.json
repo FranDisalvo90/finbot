@@ -16,19 +16,19 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/generative-ai": "^0.24.1",
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^1.19.14",
     "csv-parse": "^5.6.0",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.38.4",
+    "drizzle-orm": "^0.45.2",
     "google-auth-library": "^10.6.1",
-    "hono": "^4.6.16",
+    "hono": "^4.12.23",
     "pdf-parse": "^1.1.1",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "@types/pdf-parse": "^1.1.4",
-    "drizzle-kit": "^0.30.4",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^4.0.18"

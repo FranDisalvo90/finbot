@@ -7,7 +7,7 @@ export default defineConfig({
     fileParallelism: false,
     env: {
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5433/finbot_test",
-      JWT_SECRET: "test-secret",
+      JWT_SECRET: "test-secret-do-not-use-in-prod-0123456789",
     },
   },
 });
