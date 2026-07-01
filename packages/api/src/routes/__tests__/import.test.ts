@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import app from "../../app.js";
-import { authHeader } from "../../test/helpers.js";
+import { authHeader, getTestContext } from "../../test/helpers.js";
 import { db } from "../../db/client.js";
-import { expenses } from "../../db/schema.js";
-import { eq } from "drizzle-orm";
+import { expenses, categories } from "../../db/schema.js";
+import { and, eq } from "drizzle-orm";
 
 let auth: Record<string, string>;
 
@@ -114,5 +114,62 @@ describe("Import duplicate detection", () => {
     const data2 = await res2.json();
     expect(data2.duplicateCount).toBe(1);
     expect(data2.duplicates).toEqual([0]);
+  });
+});
+
+describe("Manual categorization derives income/expense type", () => {
+  let householdId: string;
+
+  beforeAll(async () => {
+    ({ householdId } = await getTestContext());
+  });
+
+  async function categoryByName(name: string): Promise<string> {
+    const [cat] = await db
+      .select()
+      .from(categories)
+      .where(and(eq(categories.householdId, householdId), eq(categories.name, name)));
+    return cat.id;
+  }
+
+  async function createExpense(description: string): Promise<string> {
+    const res = await app.request("/api/expenses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({ amount: 5000, description, date: "2026-05-10", type: "expense" }),
+    });
+    const created = await res.json();
+    return created.id;
+  }
+
+  async function recategorize(expenseId: string, categoryId: string) {
+    return app.request(`/api/import/categorize/${expenseId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify({ categoryId, createRule: false }),
+    });
+  }
+
+  async function typeOf(expenseId: string): Promise<string> {
+    const [row] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+    return row.type;
+  }
+
+  it("sets type to income when recategorized under INGRESOS", async () => {
+    const id = await createExpense("Transferencia recibida");
+    expect(await typeOf(id)).toBe("expense");
+
+    await recategorize(id, await categoryByName("Créditos en cuenta"));
+    expect(await typeOf(id)).toBe("income");
+  });
+
+  it("resets type to expense when moved back to an expense category", async () => {
+    const id = await createExpense("Movimiento dudoso");
+    await recategorize(id, await categoryByName("Créditos en cuenta"));
+    expect(await typeOf(id)).toBe("income");
+
+    // Moving to a non-INGRESOS category flips it back to expense
+    await recategorize(id, await categoryByName("Depreciación mensual auto"));
+    expect(await typeOf(id)).toBe("expense");
   });
 });

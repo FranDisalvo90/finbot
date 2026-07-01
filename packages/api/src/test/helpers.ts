@@ -51,6 +51,10 @@ async function getOrCreateTestUser(): Promise<{ userId: string; householdId: str
   return { userId: cachedUserId, householdId: cachedHouseholdId };
 }
 
+export async function getTestContext(): Promise<{ userId: string; householdId: string }> {
+  return getOrCreateTestUser();
+}
+
 export async function authHeader(): Promise<Record<string, string>> {
   const { userId, householdId } = await getOrCreateTestUser();
   const token = await sign(

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { db } from "../db/client.js";
-import { expenses, imports, categorizationRules } from "../db/schema.js";
+import { expenses, imports, categorizationRules, categories } from "../db/schema.js";
 import { eq, isNull, and, inArray } from "drizzle-orm";
 import { parseVisaGaliciaPDF } from "../services/parsers/visa-galicia.js";
 import { parseSplitweiseCSV } from "../services/parsers/splitwise.js";
@@ -234,7 +234,26 @@ importRoutes.put("/categorize/:expenseId", async (c) => {
 
   if (!expense) return c.json({ error: "Expense not found" }, 404);
 
-  await db.update(expenses).set({ categoryId }).where(eq(expenses.id, expenseId));
+  // Derive expense/income type from the target category: anything under the
+  // INGRESOS parent (or INGRESOS itself) counts as income so it sums instead
+  // of subtracting. Keep the current type if no category is provided.
+  const updates: Record<string, unknown> = { categoryId };
+  if (categoryId) {
+    const [cat] = await db.select().from(categories).where(eq(categories.id, categoryId));
+    if (cat) {
+      let isIncome = cat.name === "INGRESOS";
+      if (!isIncome && cat.parentId) {
+        const [parent] = await db
+          .select()
+          .from(categories)
+          .where(eq(categories.id, cat.parentId));
+        isIncome = parent?.name === "INGRESOS";
+      }
+      updates.type = isIncome ? "income" : "expense";
+    }
+  }
+
+  await db.update(expenses).set(updates).where(eq(expenses.id, expenseId));
 
   if (createRule) {
     await db.insert(categorizationRules).values({
