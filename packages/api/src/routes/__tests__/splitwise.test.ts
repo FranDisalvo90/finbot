@@ -148,7 +148,7 @@ describe("full sync flow (mocked Splitwise API)", () => {
       if (urlStr.includes("anthropic.com")) {
         return new Response(JSON.stringify({
           content: [{ type: "text", text: "[]" }],
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-5",
           role: "assistant",
         }), {
           status: 200,

@@ -94,8 +94,12 @@ Return ONLY the JSON array, no markdown, no backticks, no other text.`;
 
     try {
       const message = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-5",
         max_tokens: 4096,
+        // Classification workload: keep thinking off (Sonnet 5 runs adaptive
+        // thinking by default when omitted, which would add latency/cost and
+        // eat into the token budget for the JSON output).
+        thinking: { type: "disabled" },
         messages: [{ role: "user", content: prompt }],
       });
 
