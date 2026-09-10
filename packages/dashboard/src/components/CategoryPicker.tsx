@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Search, ChevronDown } from "lucide-react";
 
 interface Category {
@@ -14,25 +15,66 @@ interface Props {
   value?: { id: string; name: string; emoji: string | null } | null;
 }
 
+/** Ancho del menú (w-72) y separación respecto del botón. */
+const MENU_WIDTH = 288;
+const GAP = 4;
+const MARGIN = 8;
+
+interface MenuPos {
+  left: number;
+  top?: number;
+  bottom?: number;
+  maxHeight: number;
+}
+
 export default function CategoryPicker({ categories, onSelect, value }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [pos, setPos] = useState<MenuPos | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // El menú se renderiza en un portal (position: fixed) para que no lo recorte
+  // ningún ancestro con overflow-hidden, como el card de la tabla.
+  const updatePosition = useCallback(() => {
+    const anchor = ref.current;
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
+    const spaceAbove = r.top - GAP - MARGIN;
+    const openUp = spaceBelow < 240 && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(160, Math.min(340, openUp ? spaceAbove : spaceBelow));
+    const left = Math.min(Math.max(MARGIN, r.left), window.innerWidth - MENU_WIDTH - MARGIN);
+    setPos(
+      openUp
+        ? { left, bottom: window.innerHeight - r.top + GAP, maxHeight }
+        : { left, top: r.bottom + GAP, maxHeight },
+    );
+  }, []);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+    if (!open) return;
+    updatePosition();
+    inputRef.current?.focus();
+    const onScroll = () => updatePosition();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open, updatePosition]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -61,45 +103,58 @@ export default function CategoryPicker({ categories, onSelect, value }: Props) {
         <ChevronDown size={14} className="shrink-0 ml-1" />
       </button>
 
-      {open && (
-        <div className="absolute z-50 mt-1 w-72 bg-dark-card border border-dark-border rounded-lg shadow-xl overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-dark-border">
-            <Search size={14} className="text-gray-500" />
-            <input
-              ref={inputRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar categoría..."
-              className="bg-transparent text-sm text-white outline-none flex-1"
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {filtered.length === 0 && <p className="text-xs text-gray-500 p-3">Sin resultados</p>}
-            {filtered.map((parent) => (
-              <div key={parent.id}>
-                <p className="text-xs text-gray-500 font-medium px-3 pt-2 pb-1">
-                  {parent.emoji} {parent.name}
-                </p>
-                {parent.children.map((child) => (
-                  <button
-                    key={child.id}
-                    onClick={() => {
-                      onSelect(child.id);
-                      setOpen(false);
-                      setSearch("");
-                    }}
-                    className={`w-full text-left px-3 py-1.5 pl-6 text-sm hover:bg-dark-hover hover:text-white ${
-                      value?.id === child.id ? "text-blue-400 font-medium" : "text-gray-300"
-                    }`}
-                  >
-                    {child.name}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              left: pos.left,
+              top: pos.top,
+              bottom: pos.bottom,
+              width: MENU_WIDTH,
+              maxHeight: pos.maxHeight,
+            }}
+            className="fixed z-50 flex flex-col bg-dark-card border border-dark-border rounded-lg shadow-xl overflow-hidden"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-dark-border shrink-0">
+              <Search size={14} className="text-gray-500" />
+              <input
+                ref={inputRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar categoría..."
+                className="bg-transparent text-sm text-white outline-none flex-1"
+              />
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {filtered.length === 0 && <p className="text-xs text-gray-500 p-3">Sin resultados</p>}
+              {filtered.map((parent) => (
+                <div key={parent.id}>
+                  <p className="text-xs text-gray-500 font-medium px-3 pt-2 pb-1">
+                    {parent.emoji} {parent.name}
+                  </p>
+                  {parent.children.map((child) => (
+                    <button
+                      key={child.id}
+                      onClick={() => {
+                        onSelect(child.id);
+                        setOpen(false);
+                        setSearch("");
+                      }}
+                      className={`w-full text-left px-3 py-1.5 pl-6 text-sm hover:bg-dark-hover hover:text-white ${
+                        value?.id === child.id ? "text-blue-400 font-medium" : "text-gray-300"
+                      }`}
+                    >
+                      {child.name}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
