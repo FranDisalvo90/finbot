@@ -96,8 +96,15 @@ interface Expense {
   date: string;
   type: string;
   isFinancialCharge: boolean;
+  source: string;
   category: { id: string; name: string; emoji: string | null } | null;
 }
+
+const SOURCE_BADGES: Record<string, { label: string; className: string }> = {
+  splitwise: { label: "Splitwise", className: "bg-emerald-900/40 text-emerald-300" },
+  visa_galicia: { label: "Visa Galicia", className: "bg-orange-900/40 text-orange-300" },
+  manual: { label: "Manual", className: "bg-gray-700/50 text-gray-300" },
+};
 
 function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
@@ -442,6 +449,7 @@ export default function Dashboard() {
             <tr className="border-b border-dark-border text-gray-500">
               <th className="text-left p-3">Fecha</th>
               <th className="text-left p-3">Descripción</th>
+              <th className="text-left p-3">Origen</th>
               <th className="text-left p-3">Categoría</th>
               <th className="text-right p-3">Monto</th>
               <th className="w-10"></th>
@@ -460,6 +468,15 @@ export default function Dashboard() {
                 >
                   <td className="p-3 text-gray-400">{e.date}</td>
                   <td className="p-3">{e.description}</td>
+                  <td className="p-3">
+                    {SOURCE_BADGES[e.source] && (
+                      <span
+                        className={`inline-block whitespace-nowrap rounded px-2 py-0.5 text-xs ${SOURCE_BADGES[e.source].className}`}
+                      >
+                        {SOURCE_BADGES[e.source].label}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3">
                     <CategoryPicker
                       categories={categories}
@@ -508,7 +525,7 @@ export default function Dashboard() {
             })}
             {expenses.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-6 text-center text-gray-500">
+                <td colSpan={6} className="p-6 text-center text-gray-500">
                   No hay movimientos para este mes
                 </td>
               </tr>
