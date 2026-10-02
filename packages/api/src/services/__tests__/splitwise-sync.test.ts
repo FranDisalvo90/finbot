@@ -38,6 +38,26 @@ describe("mapSplitwiseExpenses", () => {
     });
   });
 
+  it("uses the Argentina local date, not the UTC date", () => {
+    // 2026-09-30 22:30 ART (UTC-3) is already 2026-10-01 in UTC
+    const expense: SplitwiseExpense = {
+      id: 124,
+      description: "Cena",
+      cost: "44000.00",
+      currency_code: "ARS",
+      date: "2026-10-01T01:30:00Z",
+      created_at: "2026-10-01T01:30:00Z",
+      updated_at: "2026-10-01T01:30:00Z",
+      deleted_at: null,
+      payment: false,
+      users: [],
+    };
+
+    const [result] = mapSplitwiseExpenses([expense]);
+
+    expect(result.date).toBe("2026-09-30");
+  });
+
   it("filters out payment expenses", () => {
     const payment: SplitwiseExpense = {
       id: 456,

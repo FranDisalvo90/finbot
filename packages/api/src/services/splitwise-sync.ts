@@ -25,11 +25,21 @@ export interface SplitwiseExpense {
   }[];
 }
 
+// Splitwise returns `date` as a UTC timestamp; take the calendar day in
+// Argentina so late-evening expenses don't roll over to the next day/month.
+const AR_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Argentina/Buenos_Aires",
+});
+
+function toArgentinaDate(isoTimestamp: string): string {
+  return AR_DATE.format(new Date(isoTimestamp));
+}
+
 export function mapSplitwiseExpenses(raw: SplitwiseExpense[]): ParsedExpense[] {
   return raw
     .filter((e) => !e.payment && !e.deleted_at)
     .map((e) => ({
-      date: e.date.substring(0, 10),
+      date: toArgentinaDate(e.date),
       description: e.description,
       amount: parseFloat(e.cost),
       currency: e.currency_code as "ARS" | "USD",
