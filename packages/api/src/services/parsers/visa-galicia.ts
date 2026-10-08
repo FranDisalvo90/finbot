@@ -13,11 +13,39 @@ export interface ParsedExpense {
 
 const FINANCIAL_CHARGE_PATTERNS = [
   "GASTOS DE SERVICIO",
+  "INTERESES FINANCIACION",
   "DB IVA",
   "IIBB PERCEP",
   "IVA RG",
   "DB.RG 5617",
 ];
+
+// Argentine amount: 26.530,66 / 95,05 / -95,05 / 1.226.344,54
+const ARG_AMOUNT = String.raw`-?\d{1,3}(?:\.\d{3})*,\d{2}`;
+
+// Pure amount line (multi-line layout): "26.530,66"
+const amountLineRegex = new RegExp(`^${ARG_AMOUNT}$`);
+
+// Comprobante (6 digits) glued to the amount, at end of a line. pdf-parse emits this when
+// the whole movement fits on one line: "PROPINA*RAPPI 0092553.660,00" → 009255 + 3.660,00.
+// Also appears alone on the line after a USD expense: "2772212,97" → 277221 + 2,97.
+const comboRegex = new RegExp(String.raw`(?:^|\s)(\d{6})(${ARG_AMOUNT})\s*$`);
+
+// Amount at the end of a financial charge line: "GASTOS DE SERVICIO EMINENT 68.347,11"
+// or "INTERESES FINANCIACION    $ 10.257,53"
+const trailingAmountRegex = new RegExp(String.raw`\$?\s*(${ARG_AMOUNT})\s*$`);
+
+// Expense start line: DD-MM-YY followed by optional type char and description
+// Examples:
+//   19-05-25*ASSISTCARD 10/12
+//   05-02-26*TUENTI RECARGAS DCP
+//   14-02-26FPADDLE.NET* HTTP          USD        3,12
+//   15-02-26KMERPAGO*MELI
+//   06-02-26 GASTOS DE SERVICIO EMINENT 61.570,25
+const dateLineRegex = /^(\d{2}-\d{2}-\d{2})\s?([*FK]?)\s*(.+)$/;
+
+// USD inline pattern: "USD  3,12" in description
+const usdInlineRegex = /USD\s+([\d.,]+)/;
 
 // Convert Argentine number format: 26.530,66 → 26530.66
 function parseArgNumber(str: string): number {
@@ -31,9 +59,24 @@ function parseDate(dateStr: string): string {
   return `${year}-${mm}-${dd}`;
 }
 
+function cleanDescription(str: string): string {
+  return str.replace(/\s+/g, " ").trim();
+}
+
+// Splits "...description 0092553.660,00" into { rest: "...description", sourceRef, amount }
+function splitCombo(str: string): { rest: string; sourceRef: string; amount: number } | null {
+  const m = str.match(comboRegex);
+  if (!m || m.index === undefined) return null;
+  return { rest: str.slice(0, m.index), sourceRef: m[1], amount: parseArgNumber(m[2]) };
+}
+
 export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense[]> {
   const data = await pdf(buffer);
-  const lines = data.text
+  return parseVisaGaliciaText(data.text);
+}
+
+export function parseVisaGaliciaText(text: string): ParsedExpense[] {
+  const lines = text
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
@@ -50,21 +93,6 @@ export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense
   // Skip header line(s)
   startIdx++;
   if (lines[startIdx]?.includes("FECHAREFERENCIACUOTA")) startIdx++;
-
-  // Regex for expense start line: DD-MM-YY followed by optional type char and description
-  // Examples:
-  //   19-05-25*ASSISTCARD 10/12
-  //   05-02-26*TUENTI RECARGAS DCP
-  //   14-02-26FPADDLE.NET* HTTP          USD        3,12
-  //   15-02-26KMERPAGO*MELI
-  //   06-02-26 GASTOS DE SERVICIO EMINENT 61.570,25
-  const dateLineRegex = /^(\d{2}-\d{2}-\d{2})\s?([*FK]?)\s*(.+)$/;
-
-  // Amount pattern
-  const amountRegex = /^([\d.]+,\d{2})$/;
-
-  // USD inline pattern: "USD  3,12" in description
-  const usdInlineRegex = /USD\s+([\d.,]+)/;
 
   let i = startIdx;
   while (i < lines.length) {
@@ -94,10 +122,10 @@ export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense
     const usdMatch = rest.match(usdInlineRegex);
 
     if (isFinancialCharge) {
-      // Financial charges: "GASTOS DE SERVICIO EMINENT 61.570,25"
-      const chargeAmountMatch = rest.match(/([\d.]+,\d{2})\s*$/);
+      // "GASTOS DE SERVICIO EMINENT 61.570,25" / "INTERESES FINANCIACION    $ 10.257,53"
+      const chargeAmountMatch = rest.match(trailingAmountRegex);
       if (chargeAmountMatch) {
-        const description = rest.replace(chargeAmountMatch[0], "").trim();
+        const description = cleanDescription(rest.slice(0, chargeAmountMatch.index));
         expenses.push({
           date,
           description,
@@ -115,25 +143,27 @@ export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense
 
     if (usdMatch) {
       // USD expense with inline amount: "PADDLE.NET* HTTP  USD 3,12"
-      // Next line is comprobante+amount combined like "3700093,12"
-      const description = rest.replace(usdInlineRegex, "").replace(/\s+/g, " ").trim();
+      // The comprobante+amount combo ("3700093,12") is either glued at the end of the same
+      // line or on the next line.
       const usdAmount = parseArgNumber(usdMatch[1]);
-
-      // Try to extract comprobante from next line
+      let descriptionRaw = rest.replace(usdInlineRegex, "");
       let sourceRef: string | null = null;
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1];
-        // Pattern: "3700093,12" — comprobante digits followed by amount
-        const comboMatch = nextLine.match(/^(\d{6})([\d.,]+)$/);
-        if (comboMatch) {
-          sourceRef = comboMatch[1];
+
+      const inlineCombo = splitCombo(descriptionRaw);
+      if (inlineCombo) {
+        sourceRef = inlineCombo.sourceRef;
+        descriptionRaw = inlineCombo.rest;
+      } else if (i + 1 < lines.length) {
+        const nextCombo = splitCombo(lines[i + 1]);
+        if (nextCombo && nextCombo.rest === "") {
+          sourceRef = nextCombo.sourceRef;
           i++; // skip this line
         }
       }
 
       expenses.push({
         date,
-        description,
+        description: cleanDescription(descriptionRaw),
         amount: usdAmount,
         currency: "USD",
         installment: null,
@@ -147,45 +177,55 @@ export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense
 
     // Regular ARS expense — description may include installment
     // "ASSISTCARD 10/12" or "TUENTI RECARGAS DCP"
-    const installmentMatch = rest.match(/(\d+\/\d+)\s*$/);
-    const installment = installmentMatch ? installmentMatch[1] : null;
-    const description = installment ? rest.replace(installmentMatch![0], "").trim() : rest.trim();
-
-    // Next line(s): comprobante, then amount
+    let descriptionRaw = rest;
     let sourceRef: string | null = null;
     let amount: number | null = null;
 
-    // Look ahead for comprobante and amount
-    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-      const nextLine = lines[j];
+    // Single-line layout: comprobante+amount glued at the end of the same line
+    const inlineCombo = splitCombo(descriptionRaw);
+    if (inlineCombo) {
+      sourceRef = inlineCombo.sourceRef;
+      amount = inlineCombo.amount;
+      descriptionRaw = inlineCombo.rest;
+    } else {
+      // Multi-line layout: next line(s) are comprobante, then amount
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const nextLine = lines[j];
 
-      // Pure comprobante: 6 digits
-      if (/^\d{6}$/.test(nextLine)) {
-        sourceRef = nextLine;
-        continue;
-      }
+        // Pure comprobante: 6 digits
+        if (/^\d{6}$/.test(nextLine)) {
+          sourceRef = nextLine;
+          continue;
+        }
 
-      // Pure amount: "26.530,66"
-      if (amountRegex.test(nextLine)) {
-        amount = parseArgNumber(nextLine);
-        i = j; // advance past consumed lines
-        break;
-      }
+        // Pure amount: "26.530,66"
+        if (amountLineRegex.test(nextLine)) {
+          amount = parseArgNumber(nextLine);
+          i = j; // advance past consumed lines
+          break;
+        }
 
-      // If we hit another date line or stop marker, break
-      if (
-        dateLineRegex.test(nextLine) ||
-        nextLine.startsWith("TARJETA") ||
-        nextLine.startsWith("TOTAL")
-      ) {
-        break;
+        // If we hit another date line or stop marker, break
+        if (
+          dateLineRegex.test(nextLine) ||
+          nextLine.startsWith("TARJETA") ||
+          nextLine.startsWith("TOTAL")
+        ) {
+          break;
+        }
       }
     }
+
+    const installmentMatch = descriptionRaw.match(/(\d+\/\d+)\s*$/);
+    const installment = installmentMatch ? installmentMatch[1] : null;
+    const description = installment
+      ? descriptionRaw.slice(0, installmentMatch!.index)
+      : descriptionRaw;
 
     if (amount !== null) {
       expenses.push({
         date,
-        description: description.replace(/^[*FK]\s*/, ""),
+        description: cleanDescription(description.replace(/^[*FK]\s*/, "")),
         amount,
         currency: "ARS",
         installment,
@@ -198,6 +238,28 @@ export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense
     i++;
   }
 
-  console.log(`[visa-parser] parsed ${expenses.length} expenses`);
-  return expenses;
+  const result = removeCancelledPairs(expenses);
+  console.log(`[visa-parser] parsed ${result.length} expenses`);
+  return result;
+}
+
+// A charge and its reversal (same description, currency and absolute amount, opposite sign)
+// cancel each other out, so neither is worth importing. Unmatched negatives are real refunds.
+function removeCancelledPairs(expenses: ParsedExpense[]): ParsedExpense[] {
+  const dropped = new Set<number>();
+  expenses.forEach((reversal, ri) => {
+    if (reversal.amount >= 0 || dropped.has(ri)) return;
+    const ci = expenses.findIndex(
+      (charge, idx) =>
+        !dropped.has(idx) &&
+        charge.amount > 0 &&
+        charge.currency === reversal.currency &&
+        charge.description === reversal.description &&
+        Math.abs(charge.amount + reversal.amount) < 0.005,
+    );
+    if (ci === -1) return;
+    dropped.add(ri);
+    dropped.add(ci);
+  });
+  return expenses.filter((_, idx) => !dropped.has(idx));
 }
