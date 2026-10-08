@@ -91,8 +91,8 @@ export default function Import() {
   const [result, setResult] = useState<ConfirmResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentMonth, setPaymentMonth] = useState("");
-  // Month the user explicitly chose to keep despite not matching the statement due date
-  const [acknowledgedMonth, setAcknowledgedMonth] = useState<string | null>(null);
+  // Modal asking the user to confirm an imputation month that differs from the statement due month
+  const [showMonthMismatch, setShowMonthMismatch] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<string>("");
   const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
 
@@ -211,7 +211,7 @@ export default function Import() {
       setPreview(data);
       setExchangeRate(data.exchangeRate ? String(data.exchangeRate) : "");
       setExcludedIndices(new Set(data.duplicates));
-      setAcknowledgedMonth(null);
+      setShowMonthMismatch(false);
       if (data.months.length > 0) {
         const latest = data.months[data.months.length - 1];
         if (data.source === "visa_galicia") {
@@ -242,10 +242,7 @@ export default function Import() {
     return [...options].sort();
   }, [preview, dueMonth]);
 
-  // Warn (and block confirm) when the chosen month differs from the statement due month,
-  // until the user either fixes the month or explicitly keeps it.
-  const monthMismatch =
-    dueMonth !== null && paymentMonth !== dueMonth && acknowledgedMonth !== paymentMonth;
+  const monthMismatch = dueMonth !== null && paymentMonth !== dueMonth;
 
   const filteredExpenses = useMemo(() => {
     if (!preview) return [];
@@ -265,8 +262,19 @@ export default function Import() {
     [filteredExpenses, excludedIndices],
   );
 
-  const confirm = async () => {
+  // Credit card statements: confirming with a month other than the due month requires an
+  // explicit decision in a modal.
+  const requestConfirm = () => {
+    if (monthMismatch) {
+      setShowMonthMismatch(true);
+      return;
+    }
+    void confirm(paymentMonth);
+  };
+
+  const confirm = async (visaMonth: string) => {
     if (!preview) return;
+    setShowMonthMismatch(false);
     setConfirming(true);
     setError(null);
     try {
@@ -282,7 +290,7 @@ export default function Import() {
           exchangeRate: exchangeRate ? Number(exchangeRate) : undefined,
           excludeIndices: [...excludedIndices],
           ...(preview.source === "visa_galicia"
-            ? { overrideMonth: paymentMonth }
+            ? { overrideMonth: visaMonth }
             : { month: selectedMonth || undefined }),
         }),
       });
@@ -564,8 +572,8 @@ export default function Import() {
                 </div>
               </div>
               <button
-                onClick={confirm}
-                disabled={confirming || includedCount === 0 || monthMismatch}
+                onClick={requestConfirm}
+                disabled={confirming || includedCount === 0}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
               >
                 {confirming && <Loader2 size={16} className="animate-spin" />}
@@ -574,26 +582,50 @@ export default function Import() {
             </div>
           </div>
 
-          {monthMismatch && preview.dueDate && dueMonth && (
-            <div className="bg-amber-900/20 border border-amber-800 rounded-lg p-3 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2 text-amber-400 text-sm">
-                <AlertTriangle size={16} className="shrink-0" />
-                Este resumen vence el {formatLongDate(preview.dueDate)} pero lo estás imputando a{" "}
-                {formatMonth(paymentMonth)}. ¿Es correcto?
-              </div>
-              <div className="flex items-center gap-3 whitespace-nowrap">
-                <button
-                  onClick={() => setPaymentMonth(dueMonth)}
-                  className="text-sm bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium"
-                >
-                  Imputar a {formatMonth(dueMonth)}
-                </button>
-                <button
-                  onClick={() => setAcknowledgedMonth(paymentMonth)}
-                  className="text-sm text-amber-400 hover:text-amber-300 underline"
-                >
-                  Mantener {formatMonth(paymentMonth)}
-                </button>
+          {showMonthMismatch && preview.dueDate && dueMonth && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/60" onClick={() => setShowMonthMismatch(false)} />
+              <div
+                role="dialog"
+                aria-modal="true"
+                className="relative bg-dark-bg border border-dark-border rounded-xl shadow-2xl p-6 w-full max-w-md mx-4"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertTriangle size={22} className="text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="text-base font-semibold text-white">¿Imputar a {formatMonth(paymentMonth)}?</h3>
+                    <p className="mt-2 text-sm text-gray-400">
+                      Este resumen vence el{" "}
+                      <span className="text-white">{formatLongDate(preview.dueDate)}</span>, así que lo
+                      esperable sería imputarlo a{" "}
+                      <span className="text-white">{formatMonth(dueMonth)}</span>. Elegiste{" "}
+                      <span className="text-white">{formatMonth(paymentMonth)}</span>.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-6 flex flex-col gap-2">
+                  <button
+                    onClick={() => {
+                      setPaymentMonth(dueMonth);
+                      void confirm(dueMonth);
+                    }}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    Imputar a {formatMonth(dueMonth)}
+                  </button>
+                  <button
+                    onClick={() => void confirm(paymentMonth)}
+                    className="w-full bg-dark-hover hover:bg-dark-border text-amber-400 px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    Sí, imputar a {formatMonth(paymentMonth)}
+                  </button>
+                  <button
+                    onClick={() => setShowMonthMismatch(false)}
+                    className="w-full text-gray-500 hover:text-white px-4 py-2 rounded-lg text-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
           )}
