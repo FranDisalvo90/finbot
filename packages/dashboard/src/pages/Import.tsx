@@ -30,6 +30,7 @@ interface UploadResult {
   months: string[];
   count: number;
   expenses: PreviewExpense[];
+  dueDate: string | null; // YYYY-MM-DD, credit card statements only
   exchangeRate: number | null;
   duplicates: number[];
   duplicateCount: number;
@@ -63,6 +64,25 @@ function formatMonth(month: string): string {
   return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
 }
 
+// "2026-10-05" → "5 de octubre de 2026"
+function formatLongDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "long", year: "numeric" }).format(
+    new Date(y, m - 1, d),
+  );
+}
+
+// Current month + 3 months back, oldest first
+function recentMonths(): string[] {
+  const now = new Date();
+  const options: string[] = [];
+  for (let i = 3; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    options.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return options;
+}
+
 export default function Import() {
   const [uploading, setUploading] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -71,6 +91,8 @@ export default function Import() {
   const [result, setResult] = useState<ConfirmResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentMonth, setPaymentMonth] = useState("");
+  // Month the user explicitly chose to keep despite not matching the statement due date
+  const [acknowledgedMonth, setAcknowledgedMonth] = useState<string | null>(null);
   const [exchangeRate, setExchangeRate] = useState<string>("");
   const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set());
 
@@ -189,13 +211,16 @@ export default function Import() {
       setPreview(data);
       setExchangeRate(data.exchangeRate ? String(data.exchangeRate) : "");
       setExcludedIndices(new Set(data.duplicates));
+      setAcknowledgedMonth(null);
       if (data.months.length > 0) {
         const latest = data.months[data.months.length - 1];
         if (data.source === "visa_galicia") {
-          // For credit cards: no month filter, default payment month = current month
+          // For credit cards: no month filter, default payment month = statement due month
+          // (falls back to current month when the due date could not be read)
           setSelectedMonth("");
           const now = new Date();
-          setPaymentMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+          const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          setPaymentMonth(data.dueDate ? data.dueDate.substring(0, 7) : currentMonth);
         } else {
           setSelectedMonth(latest);
           setPaymentMonth("");
@@ -208,17 +233,19 @@ export default function Import() {
     }
   }, []);
 
+  const dueMonth = preview?.source === "visa_galicia" && preview.dueDate ? preview.dueDate.substring(0, 7) : null;
+
   const paymentMonthOptions = useMemo(() => {
     if (!preview || preview.source !== "visa_galicia") return [];
-    const now = new Date();
-    const options: string[] = [];
-    // Current month + 3 months back
-    for (let i = 3; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      options.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    }
-    return options;
-  }, [preview]);
+    const options = new Set(recentMonths());
+    if (dueMonth) options.add(dueMonth);
+    return [...options].sort();
+  }, [preview, dueMonth]);
+
+  // Warn (and block confirm) when the chosen month differs from the statement due month,
+  // until the user either fixes the month or explicitly keeps it.
+  const monthMismatch =
+    dueMonth !== null && paymentMonth !== dueMonth && acknowledgedMonth !== paymentMonth;
 
   const filteredExpenses = useMemo(() => {
     if (!preview) return [];
@@ -538,7 +565,7 @@ export default function Import() {
               </div>
               <button
                 onClick={confirm}
-                disabled={confirming || includedCount === 0}
+                disabled={confirming || includedCount === 0 || monthMismatch}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
               >
                 {confirming && <Loader2 size={16} className="animate-spin" />}
@@ -546,6 +573,30 @@ export default function Import() {
               </button>
             </div>
           </div>
+
+          {monthMismatch && preview.dueDate && dueMonth && (
+            <div className="bg-amber-900/20 border border-amber-800 rounded-lg p-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-amber-400 text-sm">
+                <AlertTriangle size={16} className="shrink-0" />
+                Este resumen vence el {formatLongDate(preview.dueDate)} pero lo estás imputando a{" "}
+                {formatMonth(paymentMonth)}. ¿Es correcto?
+              </div>
+              <div className="flex items-center gap-3 whitespace-nowrap">
+                <button
+                  onClick={() => setPaymentMonth(dueMonth)}
+                  className="text-sm bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium"
+                >
+                  Imputar a {formatMonth(dueMonth)}
+                </button>
+                <button
+                  onClick={() => setAcknowledgedMonth(paymentMonth)}
+                  className="text-sm text-amber-400 hover:text-amber-300 underline"
+                >
+                  Mantener {formatMonth(paymentMonth)}
+                </button>
+              </div>
+            </div>
+          )}
 
           {preview.duplicateCount > 0 && (
             <div className="bg-amber-900/20 border border-amber-800 rounded-lg p-3 flex items-center justify-between">

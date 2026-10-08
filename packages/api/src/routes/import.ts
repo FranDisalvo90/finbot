@@ -26,10 +26,13 @@ importRoutes.post("/upload", async (c) => {
 
   let parsed: ParsedExpense[];
   let source: string;
+  let dueDate: string | null = null;
 
   try {
     if (fileName.endsWith(".pdf")) {
-      parsed = await parseVisaGaliciaPDF(buffer);
+      const statement = await parseVisaGaliciaPDF(buffer);
+      parsed = statement.expenses;
+      dueDate = statement.dueDate;
       source = "visa_galicia";
     } else if (fileName.endsWith(".csv")) {
       parsed = parseSplitweiseCSV(buffer.toString("utf-8"));
@@ -92,6 +95,7 @@ importRoutes.post("/upload", async (c) => {
     months,
     count: parsed.length,
     expenses: parsed,
+    dueDate,
     exchangeRate,
     duplicates,
     duplicateCount: duplicates.length,

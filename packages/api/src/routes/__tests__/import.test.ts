@@ -1,5 +1,11 @@
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import app from "../../app.js";
+import { parseVisaGaliciaPDF } from "../../services/parsers/visa-galicia.js";
+
+vi.mock("../../services/parsers/visa-galicia.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../services/parsers/visa-galicia.js")>();
+  return { ...actual, parseVisaGaliciaPDF: vi.fn() };
+});
 import { authHeader, getTestContext } from "../../test/helpers.js";
 import { db } from "../../db/client.js";
 import { expenses, categories } from "../../db/schema.js";
@@ -171,5 +177,34 @@ describe("Manual categorization derives income/expense type", () => {
     // Moving to a non-INGRESOS category flips it back to expense
     await recategorize(id, await categoryByName("Depreciación mensual auto"));
     expect(await typeOf(id)).toBe("expense");
+  });
+});
+
+describe("Visa Galicia upload preview", () => {
+  it("returns the statement due date so the UI can check the imputation month", async () => {
+    vi.mocked(parseVisaGaliciaPDF).mockResolvedValueOnce({
+      dueDate: "2026-10-05",
+      expenses: [
+        {
+          date: "2026-09-14",
+          description: "TUENTI RECARGAS DCP",
+          amount: 18300,
+          currency: "ARS",
+          installment: null,
+          isFinancialCharge: false,
+          sourceRef: "003942",
+          rawLine: "14-09-26*TUENTI RECARGAS DCP 00394218.300,00",
+        },
+      ],
+    });
+
+    const form = new FormData();
+    form.append("file", new Blob(["%PDF-1.4 fake"], { type: "application/pdf" }), "resumen.pdf");
+    const res = await app.request("/api/import/upload", { method: "POST", body: form, headers: auth });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.source).toBe("visa_galicia");
+    expect(data.count).toBe(1);
+    expect(data.dueDate).toBe("2026-10-05");
   });
 });

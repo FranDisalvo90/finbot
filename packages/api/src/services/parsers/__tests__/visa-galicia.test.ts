@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseVisaGaliciaText } from "../visa-galicia.js";
+import { parseVisaGaliciaText, extractVisaDueDate } from "../visa-galicia.js";
 
 // Builds a statement body around the given movement lines, mimicking pdf-parse output.
 function statement(lines: string[]): string {
@@ -122,5 +122,27 @@ describe("parseVisaGaliciaText", () => {
       ]),
     );
     expect(res.map((e) => e.amount)).toEqual([75656.77, 4600]);
+  });
+});
+
+describe("extractVisaDueDate", () => {
+  const header = [
+    "Resumen de tarjeta de credito VISA",
+    "20260924076865997H",
+    "Página1 / 6",
+    "1.226.344,54",
+    "29,68",
+    "20-Ago-2601-Sep-2624-Sep-26",
+    "05-Oct-26",
+    "22-Oct-2602-Nov-26",
+    "PAGO MINIMOLÍMITES",
+  ].join("\n");
+
+  it("returns the payment due date from the statement header as YYYY-MM-DD", () => {
+    expect(extractVisaDueDate(header)).toBe("2026-10-05");
+  });
+
+  it("returns null when no standalone due date line exists", () => {
+    expect(extractVisaDueDate("DETALLE DEL CONSUMO\n20-Ago-2601-Sep-2624-Sep-26\n")).toBeNull();
   });
 });

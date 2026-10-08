@@ -70,9 +70,33 @@ function splitCombo(str: string): { rest: string; sourceRef: string; amount: num
   return { rest: str.slice(0, m.index), sourceRef: m[1], amount: parseArgNumber(m[2]) };
 }
 
-export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedExpense[]> {
+export interface ParsedStatement {
+  expenses: ParsedExpense[];
+  dueDate: string | null; // YYYY-MM-DD — payment due date ("vencimiento") of the statement
+}
+
+export async function parseVisaGaliciaPDF(buffer: Buffer): Promise<ParsedStatement> {
   const data = await pdf(buffer);
-  return parseVisaGaliciaText(data.text);
+  return { expenses: parseVisaGaliciaText(data.text), dueDate: extractVisaDueDate(data.text) };
+}
+
+const SPANISH_MONTHS: Record<string, string> = {
+  ene: "01", feb: "02", mar: "03", abr: "04", may: "05", jun: "06",
+  jul: "07", ago: "08", sep: "09", oct: "10", nov: "11", dic: "12",
+};
+
+// The statement header lists cierre/vencimiento dates as "DD-Mon-YY". pdf-parse glues the
+// previous and next period dates together ("20-Ago-2601-Sep-2624-Sep-26"), while the current
+// payment due date is the only one that comes out alone on its line ("05-Oct-26").
+export function extractVisaDueDate(text: string): string | null {
+  for (const raw of text.split("\n")) {
+    const m = raw.trim().match(/^(\d{2})-([A-Za-z]{3})-(\d{2})$/);
+    if (!m) continue;
+    const month = SPANISH_MONTHS[m[2].toLowerCase()];
+    if (!month) continue;
+    return `20${m[3]}-${month}-${m[1]}`;
+  }
+  return null;
 }
 
 export function parseVisaGaliciaText(text: string): ParsedExpense[] {
